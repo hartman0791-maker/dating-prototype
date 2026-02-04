@@ -1,9 +1,8 @@
-export default function HomePage() {
+export default function DiscoverPage() {
   return (
     <main style={{ maxWidth: 520, margin: "40px auto", fontFamily: "system-ui" }}>
-      <h1>Dating Prototype</h1>
-      <p>Go to <b>/discover</b> to start swiping.</p>
+      <h1>Discover</h1>
+      <p>If you can see this, the page is deploying correctly.</p>
     </main>
   );
 }
-
