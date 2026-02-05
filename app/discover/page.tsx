@@ -27,6 +27,7 @@ export default function DiscoverPage() {
       setUserId(data.session.user.id);
       await loadProfiles();
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadProfiles() {
@@ -71,50 +72,25 @@ export default function DiscoverPage() {
     else setStatus("");
 
     if (remaining.length < 3) loadProfiles();
-
-    async function resetMySwipes() {
-  if (!userId) return;
-
-  const ok = window.confirm("Reset your swipes? You'll see profiles again.");
-  if (!ok) return;
-
-  setStatus("Resetting swipes...");
-
-  const { error } = await supabase
-    .from("swipes")
-    .delete()
-    .eq("swiper_id", userId);
-
-  if (error) {
-    setStatus(`Reset failed: ${error.message}`);
-    return;
   }
 
-  setStatus("Swipes reset ✅ Reloading...");
-  await loadProfiles();
-}
-async function resetMySwipes() {
-  if (!userId) return;
+  async function resetMySwipes() {
+    if (!userId) return;
 
-  const ok = window.confirm("Reset your swipes? You'll see profiles again.");
-  if (!ok) return;
+    const ok = window.confirm("Reset your swipes? You'll see profiles again.");
+    if (!ok) return;
 
-  setStatus("Resetting swipes...");
+    setStatus("Resetting swipes...");
 
-  const { error } = await supabase
-    .from("swipes")
-    .delete()
-    .eq("swiper_id", userId);
+    const { error } = await supabase.from("swipes").delete().eq("swiper_id", userId);
 
-  if (error) {
-    setStatus(`Reset failed: ${error.message}`);
-    return;
-  }
+    if (error) {
+      setStatus(`Reset failed: ${error.message}`);
+      return;
+    }
 
-  setStatus("Swipes reset ✅ Reloading...");
-  await loadProfiles();
-}
-
+    setStatus("Swipes reset ✅ Reloading...");
+    await loadProfiles();
   }
 
   async function logout() {
@@ -126,15 +102,10 @@ async function resetMySwipes() {
     <main style={{ maxWidth: 420, margin: "40px auto", fontFamily: "system-ui" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ margin: 0 }}>Discover</h1>
-     <div style={{ display: "flex", gap: 8 }}>
-  <button onClick={resetMySwipes}>Reset swipes</button>
- <div style={{ display: "flex", gap: 8 }}>
-  <button onClick={resetMySwipes}>Reset swipes</button>
-  <button onClick={logout}>Logout</button>
-</div>
-
-</div>
-
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={resetMySwipes}>Reset swipes</button>
+          <button onClick={logout}>Logout</button>
+        </div>
       </div>
 
       {userId && <p style={{ fontSize: 12, opacity: 0.7 }}>Logged in as: {userId}</p>}
