@@ -93,6 +93,27 @@ export default function DiscoverPage() {
   setStatus("Swipes reset ✅ Reloading...");
   await loadProfiles();
 }
+async function resetMySwipes() {
+  if (!userId) return;
+
+  const ok = window.confirm("Reset your swipes? You'll see profiles again.");
+  if (!ok) return;
+
+  setStatus("Resetting swipes...");
+
+  const { error } = await supabase
+    .from("swipes")
+    .delete()
+    .eq("swiper_id", userId);
+
+  if (error) {
+    setStatus(`Reset failed: ${error.message}`);
+    return;
+  }
+
+  setStatus("Swipes reset ✅ Reloading...");
+  await loadProfiles();
+}
 
   }
 
@@ -107,7 +128,11 @@ export default function DiscoverPage() {
         <h1 style={{ margin: 0 }}>Discover</h1>
      <div style={{ display: "flex", gap: 8 }}>
   <button onClick={resetMySwipes}>Reset swipes</button>
+ <div style={{ display: "flex", gap: 8 }}>
+  <button onClick={resetMySwipes}>Reset swipes</button>
   <button onClick={logout}>Logout</button>
+</div>
+
 </div>
 
       </div>
