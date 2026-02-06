@@ -16,6 +16,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
+  const [heroOk, setHeroOk] = useState(true);
 
   const canSubmit = useMemo(
     () => email.trim().length > 3 && password.trim().length >= 6,
@@ -31,50 +32,66 @@ export default function LoginPage() {
 
   async function signUp() {
     setStatus("Creating account...");
-
     const { error } = await supabase.auth.signUp({
       email: email.trim(),
       password: password.trim(),
     });
-
-    if (error) {
-      setStatus(`Error: ${error.message}`);
-      return;
-    }
-
+    if (error) return setStatus(`Error: ${error.message}`);
     setStatus("Account created ✅ Now press Log in.");
   }
 
   async function logIn() {
     setStatus("Logging in...");
-
     const { error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password: password.trim(),
     });
-
-    if (error) {
-      setStatus(`Error: ${error.message}`);
-      return;
-    }
-
+    if (error) return setStatus(`Error: ${error.message}`);
     window.location.href = "/discover";
   }
 
   return (
     <main className="app-container">
-      {/* HERO IMAGE */}
+      {/* HERO */}
       <div
         style={{
           height: 210,
           borderRadius: 22,
-          backgroundImage:
-            "linear-gradient(135deg, rgba(255, 77, 121, 0.22), rgba(255, 196, 99, 0.18)), url(https://images.unsplash.com/photo-1520975958225-0cf8f6d617da?auto=format&fit=crop&w=1200&q=80)",
-          backgroundSize: "cover",
-          backgroundPosition: "center",
+          overflow: "hidden",
+          position: "relative",
           boxShadow: "0 18px 40px rgba(0,0,0,0.12)",
+          background:
+            "linear-gradient(135deg, rgba(255,77,121,0.35), rgba(255,154,60,0.25))",
         }}
-      />
+      >
+        {heroOk ? (
+          <img
+            src="https://images.unsplash.com/photo-1520975958225-0cf8f6d617da?auto=format&fit=crop&w=1600&q=80"
+            alt="Welcome"
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            onError={() => setHeroOk(false)}
+          />
+        ) : (
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              background:
+                "radial-gradient(circle at top left, #ffe6f0 0%, transparent 45%), radial-gradient(circle at bottom right, #fff1d6 0%, transparent 50%), linear-gradient(135deg, #ff4d79 0%, #ff9a3c 100%)",
+            }}
+          />
+        )}
+
+        {/* overlay for readability */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "linear-gradient(135deg, rgba(255,77,121,0.22), rgba(255,154,60,0.18))",
+          }}
+        />
+      </div>
 
       <div style={{ marginTop: 18 }}>
         <h1 style={{ margin: "0 0 6px 0" }}>Welcome back</h1>
@@ -134,9 +151,7 @@ export default function LoginPage() {
             style={{
               ...softBtn,
               flex: 1,
-              background: canSubmit
-                ? "linear-gradient(135deg, #ff4d79, #ff9a3c)"
-                : "#ddd",
+              background: canSubmit ? "linear-gradient(135deg, #ff4d79, #ff9a3c)" : "#ddd",
               color: "white",
             }}
           >
