@@ -3,6 +3,7 @@ export {};
 
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
+import AppHeader from "../../components/AppHeader";
 
 type DiscoveryRow = {
   id: string;
@@ -37,7 +38,6 @@ export default function DiscoverPage() {
   const [status, setStatus] = useState("");
   const [anim, setAnim] = useState<"in" | "out">("in");
 
-  // avoid re-signing the same image repeatedly
   const signedUrlCache = useRef<Record<string, string>>({});
 
   useEffect(() => {
@@ -55,10 +55,8 @@ export default function DiscoverPage() {
 
   async function getSignedAvatarUrl(path: string) {
     if (signedUrlCache.current[path]) return signedUrlCache.current[path];
-
     const { data, error } = await supabase.storage.from("avatars").createSignedUrl(path, 3600);
     if (error) return null;
-
     signedUrlCache.current[path] = data.signedUrl;
     return data.signedUrl;
   }
@@ -75,16 +73,8 @@ export default function DiscoverPage() {
 
   async function loadProfiles() {
     setStatus("Loading...");
-
-    // IMPORTANT: function must return avatar_path now
-    const { data, error } = await supabase.rpc("get_discovery_profiles", {
-      limit_count: 10,
-    });
-
-    if (error) {
-      setStatus(`Error: ${error.message}`);
-      return;
-    }
+    const { data, error } = await supabase.rpc("get_discovery_profiles", { limit_count: 10 });
+    if (error) return setStatus(`Error: ${error.message}`);
 
     const raw = (data ?? []) as DiscoveryRow[];
     const list = await attachSignedUrls(raw);
@@ -98,10 +88,8 @@ export default function DiscoverPage() {
     if (!current) return;
 
     setAnim("out");
-
     setTimeout(async () => {
       const targetId = current.id;
-
       const remaining = profiles.slice(1);
       setProfiles(remaining);
       setCurrent(remaining[0] ?? null);
@@ -112,10 +100,7 @@ export default function DiscoverPage() {
         swipe_dir: direction,
       });
 
-      if (error) {
-        setStatus(`Error: ${error.message}`);
-        return;
-      }
+      if (error) return setStatus(`Error: ${error.message}`);
 
       const result = Array.isArray(data) ? data[0] : data;
       if (result?.matched) setStatus(`It's a match! match_id: ${result.match_id}`);
@@ -127,18 +112,12 @@ export default function DiscoverPage() {
 
   async function resetMySwipes() {
     if (!userId) return;
-
     const ok = window.confirm("Reset your swipes? You'll see profiles again.");
     if (!ok) return;
 
     setStatus("Resetting swipes...");
-
     const { error } = await supabase.from("swipes").delete().eq("swiper_id", userId);
-
-    if (error) {
-      setStatus(`Reset failed: ${error.message}`);
-      return;
-    }
+    if (error) return setStatus(`Reset failed: ${error.message}`);
 
     setStatus("Swipes reset ✅ Reloading...");
     await loadProfiles();
@@ -159,23 +138,16 @@ export default function DiscoverPage() {
         .card.out { opacity: 0; transform: translateY(10px) scale(0.98); }
       `}</style>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <h1 style={{ margin: 0 }}>Discover</h1>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <button className="btn btn-gray" onClick={() => (window.location.href = "/matches")}>
-            💬 Matches
-          </button>
-          <button className="btn btn-gray" onClick={() => (window.location.href = "/profile")}>
-            👤 Profile
-          </button>
-          <button className="btn btn-soft" onClick={resetMySwipes}>
-            🔄 Reset
-          </button>
-          <button className="btn btn-gray" onClick={logout}>
-            🚪 Logout
-          </button>
-        </div>
-      </div>
+      <AppHeader
+        right={
+          <>
+            <button className="btn btn-gray" onClick={() => (window.location.href = "/matches")}>💬 Matches</button>
+            <button className="btn btn-gray" onClick={() => (window.location.href = "/profile")}>👤 Profile</button>
+            <button className="btn btn-soft" onClick={resetMySwipes}>🔄 Reset</button>
+            <button className="btn btn-gray" onClick={logout}>🚪 Logout</button>
+          </>
+        }
+      />
 
       {userId && <p style={{ fontSize: 12, opacity: 0.75, margin: "0 0 12px 0" }}>Logged in as: {userId}</p>}
 
@@ -186,16 +158,15 @@ export default function DiscoverPage() {
       )}
 
       {!current ? (
-        <button className="btn btn-gray btn-full" onClick={loadProfiles}>
-          Reload
-        </button>
+        <button className="btn btn-gray btn-full" onClick={loadProfiles}>Reload</button>
       ) : (
         <div
           className={`card ${anim}`}
           style={{
             padding: 20,
             borderRadius: 22,
-            background: "linear-gradient(180deg, #ffffff, #eef2f7)",
+            background: "linear-gradient(180deg, var(--card-solid), rgba(238,242,247,0.8))",
+            border: "1px solid var(--border)",
             boxShadow: "0 14px 28px rgba(0,0,0,0.10)",
           }}
         >
@@ -213,18 +184,17 @@ export default function DiscoverPage() {
           >
             <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.35) 100%)" }} />
             <div style={{ position: "absolute", left: 14, bottom: 12, color: "white" }}>
-              <div style={{ fontWeight: 900, fontSize: 20 }}>{current.name ?? "Unnamed"}</div>
+              <div style={{ fontWeight: 950, fontSize: 20 }}>{current.name ?? "Unnamed"}</div>
               <div style={{ fontSize: 12, opacity: 0.9 }}>{current.location_text ?? "No location"}</div>
             </div>
           </div>
 
-          <p style={{ margin: "0 0 10px 0", color: "#444" }}>{current.bio ?? "No bio yet."}</p>
+          <p style={{ margin: "0 0 10px 0", color: "var(--muted)" }}>{current.bio ?? "No bio yet."}</p>
 
           <div style={{ display: "flex", gap: 12 }}>
             <button className="btn btn-gray" style={{ flex: 1, borderRadius: 30, padding: 14 }} onClick={() => swipe("pass")}>
               ❌ Pass
             </button>
-
             <button className="btn btn-warm" style={{ flex: 1, borderRadius: 30, padding: 14 }} onClick={() => swipe("like")}>
               ❤️ Like
             </button>
