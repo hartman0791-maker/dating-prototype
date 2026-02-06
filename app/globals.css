@@ -1,74 +1,148 @@
-/* ===== Global reset ===== */
-* {
-  box-sizing: border-box;
+/* ===== Reset ===== */
+* { box-sizing: border-box; }
+html, body { padding: 0; margin: 0; }
+
+/* ===== Theme variables ===== */
+:root {
+  --bg: radial-gradient(circle at top left, #ffe6f0 0%, transparent 40%),
+        radial-gradient(circle at bottom right, #fff1d6 0%, transparent 45%),
+        linear-gradient(135deg, #fff7f0 0%, #ffe4ef 45%, #ffe9cc 100%);
+
+  --card: rgba(255, 255, 255, 0.92);
+  --card-solid: #ffffff;
+  --text: #141414;
+  --muted: rgba(20, 20, 20, 0.68);
+  --border: rgba(0, 0, 0, 0.10);
+  --shadow: 0 24px 55px rgba(0, 0, 0, 0.12);
+
+  --warm1: #ff4d79;
+  --warm2: #ff9a3c;
+
+  --btn-gray: #f1f1f1;
+  --btn-gray-text: #222;
+
+  --btn-soft-bg: #fff0f6;
+  --btn-soft-text: #c2185b;
+  --btn-soft-border: rgba(194, 24, 91, 0.22);
 }
 
+html[data-theme="dark"] {
+  --bg: radial-gradient(circle at top left, rgba(255, 77, 121, 0.20) 0%, transparent 48%),
+        radial-gradient(circle at bottom right, rgba(255, 154, 60, 0.18) 0%, transparent 55%),
+        linear-gradient(135deg, #0c0c10 0%, #111218 60%, #0e0e13 100%);
+
+  --card: rgba(20, 20, 24, 0.86);
+  --card-solid: #141418;
+  --text: rgba(255,255,255,0.92);
+  --muted: rgba(255,255,255,0.65);
+  --border: rgba(255,255,255,0.12);
+  --shadow: 0 24px 55px rgba(0, 0, 0, 0.35);
+
+  --btn-gray: rgba(255,255,255,0.10);
+  --btn-gray-text: rgba(255,255,255,0.92);
+
+  --btn-soft-bg: rgba(255, 77, 121, 0.14);
+  --btn-soft-text: rgba(255,255,255,0.92);
+  --btn-soft-border: rgba(255,255,255,0.14);
+}
+
+/* ===== Base page ===== */
 body {
-  margin: 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto;
   min-height: 100vh;
-
-  /* Warm + shiny gradient background */
-  background: radial-gradient(circle at top left, #ffe6f0 0%, transparent 40%),
-    radial-gradient(circle at bottom right, #fff1d6 0%, transparent 45%),
-    linear-gradient(135deg, #fff7f0 0%, #ffe4ef 45%, #ffe9cc 100%);
-
-  color: #1a1a1a;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* App container used across pages */
+/* ===== App container ===== */
 .app-container {
   max-width: 520px;
   margin: 32px auto;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--card);
+  border: 1px solid var(--border);
   border-radius: 24px;
   padding: 24px;
-  box-shadow: 0 24px 55px rgba(0, 0, 0, 0.12);
-  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
 }
 
-/* ===== Shared button styles ===== */
+/* ===== Typography polish ===== */
+h1 {
+  font-size: 26px;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+h2 {
+  font-size: 20px;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+p { color: var(--text); }
+small { color: var(--muted); }
+
+/* ===== Inputs ===== */
+input {
+  width: 100%;
+  padding: 12px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card-solid);
+  color: var(--text);
+  outline: none;
+}
+html[data-theme="dark"] input {
+  background: rgba(255,255,255,0.06);
+}
+
+/* ===== Shared buttons ===== */
 .btn {
   border: none;
   border-radius: 14px;
   padding: 10px 12px;
   cursor: pointer;
-  font-weight: 800;
+  font-weight: 850;
   font-family: inherit;
-  transition: transform 0.06s ease, opacity 0.15s ease;
+  transition: transform 0.06s ease, opacity 0.15s ease, filter 0.2s ease;
+  color: var(--text);
 }
 
-.btn:active {
-  transform: scale(0.98);
-}
+.btn:active { transform: scale(0.98); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
-.btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
+.btn-full { width: 100%; }
 
 .btn-warm {
-  background: linear-gradient(135deg, #ff4d79, #ff9a3c);
+  background: linear-gradient(135deg, var(--warm1), var(--warm2));
   color: white;
-  box-shadow: 0 12px 22px rgba(255, 77, 121, 0.18);
+  box-shadow: 0 14px 24px rgba(255, 77, 121, 0.18);
 }
+.btn-warm:hover { filter: brightness(1.03); }
 
 .btn-soft {
-  background: #fff0f6;
-  color: #c2185b;
-  border: 1px solid rgba(194, 24, 91, 0.22);
+  background: var(--btn-soft-bg);
+  color: var(--btn-soft-text);
+  border: 1px solid var(--btn-soft-border);
 }
 
 .btn-gray {
-  background: #f1f1f1;
-  color: #222;
+  background: var(--btn-gray);
+  color: var(--btn-gray-text);
+  border: 1px solid var(--border);
 }
 
-.btn-full {
-  width: 100%;
-}
-
-/* Inputs */
-input {
-  font-family: inherit;
+/* ===== Theme toggle floating button ===== */
+.theme-fab {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 9999;
+  border-radius: 999px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 14px 28px rgba(0,0,0,0.12);
 }
