@@ -11,9 +11,9 @@ body {
   color: #1a1a1a;
 }
 
-/* App container (used on all pages) */
+/* App container used across pages */
 .app-container {
-  max-width: 420px;
+  max-width: 520px;
   margin: 32px auto;
   background: #ffffff;
   border-radius: 22px;
@@ -21,18 +21,16 @@ body {
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
 }
 
-/* Headings */
+/* Typography */
 h1,
 h2 {
   color: #111;
 }
 
-/* Paragraphs */
 p {
   color: #333;
 }
 
-/* Muted text */
 small {
   color: #666;
 }
