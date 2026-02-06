@@ -1,14 +1,13 @@
 import "./globals.css";
-
-export const metadata = {
-  title: "Dating Prototype",
-  description: "Supabase + Next.js dating prototype"
-};
+import ThemeToggle from "../components/ThemeToggle";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        <ThemeToggle />
+      </body>
     </html>
   );
 }
