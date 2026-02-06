@@ -9,15 +9,11 @@ type Profile = {
   name: string | null;
   bio: string | null;
   location_text: string | null;
+  avatar_url: string | null;
 };
 
-const topBtn: React.CSSProperties = {
-  border: "none",
-  background: "#f1f1f1",
-  padding: "8px 12px",
-  borderRadius: 12,
-  cursor: "pointer",
-};
+const FALLBACK_AVATAR =
+  "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=1200&q=80";
 
 export default function DiscoverPage() {
   const [userId, setUserId] = useState<string | null>(null);
@@ -60,7 +56,6 @@ export default function DiscoverPage() {
 
     const targetId = current.id;
 
-    // move to next card immediately
     const remaining = profiles.slice(1);
     setProfiles(remaining);
     setCurrent(remaining[0] ?? null);
@@ -106,19 +101,21 @@ export default function DiscoverPage() {
     window.location.href = "/login";
   }
 
+  const photoUrl = current?.avatar_url || FALLBACK_AVATAR;
+
   return (
     <main className="app-container">
       {/* Top bar */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h1 style={{ margin: 0 }}>Discover</h1>
         <div style={{ display: "flex", gap: 10 }}>
-          <button style={topBtn} onClick={() => (window.location.href = "/matches")}>
+          <button className="btn btn-gray" onClick={() => (window.location.href = "/matches")}>
             💬 Matches
           </button>
-          <button style={topBtn} onClick={resetMySwipes}>
+          <button className="btn btn-soft" onClick={resetMySwipes}>
             🔄 Reset
           </button>
-          <button style={topBtn} onClick={logout}>
+          <button className="btn btn-gray" onClick={logout}>
             🚪 Logout
           </button>
         </div>
@@ -127,13 +124,13 @@ export default function DiscoverPage() {
       {userId && <p style={{ fontSize: 12, opacity: 0.75, margin: "0 0 12px 0" }}>Logged in as: {userId}</p>}
 
       {status && (
-        <div style={{ padding: 12, border: "1px solid #eee", borderRadius: 14, marginBottom: 12, background: "#fff7f2" }}>
+        <div style={{ padding: 12, borderRadius: 14, background: "rgba(255, 244, 235, 0.85)", marginBottom: 12 }}>
           {status}
         </div>
       )}
 
       {!current ? (
-        <button style={{ ...topBtn, width: "100%" }} onClick={loadProfiles}>
+        <button className="btn btn-gray btn-full" onClick={loadProfiles}>
           Reload
         </button>
       ) : (
@@ -148,9 +145,9 @@ export default function DiscoverPage() {
         >
           <div
             style={{
-              height: 220,
-              borderRadius: 16,
-              backgroundImage: "url(https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e)",
+              height: 240,
+              borderRadius: 18,
+              backgroundImage: `url(${photoUrl})`,
               backgroundSize: "cover",
               backgroundPosition: "center",
               marginBottom: 16,
@@ -161,35 +158,11 @@ export default function DiscoverPage() {
           <p style={{ margin: "0 0 8px 0", color: "#444" }}>{current.bio ?? "No bio yet."}</p>
           <small style={{ color: "#666" }}>{current.location_text ?? "No location"}</small>
 
-          <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
-            <button
-              onClick={() => swipe("pass")}
-              style={{
-                flex: 1,
-                padding: 14,
-                borderRadius: 30,
-                border: "none",
-                background: "#eee",
-                fontSize: 16,
-                cursor: "pointer",
-              }}
-            >
+          <div style={{ display: "flex", gap: 12, marginTop: 18 }}>
+            <button className="btn btn-gray" style={{ flex: 1, borderRadius: 30, padding: 14 }} onClick={() => swipe("pass")}>
               ❌ Pass
             </button>
-
-            <button
-              onClick={() => swipe("like")}
-              style={{
-                flex: 1,
-                padding: 14,
-                borderRadius: 30,
-                border: "none",
-                background: "linear-gradient(135deg, #ff416c, #ff4b2b)",
-                color: "white",
-                fontSize: 16,
-                cursor: "pointer",
-              }}
-            >
+            <button className="btn btn-warm" style={{ flex: 1, borderRadius: 30, padding: 14 }} onClick={() => swipe("like")}>
               ❤️ Like
             </button>
           </div>
