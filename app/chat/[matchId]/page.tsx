@@ -12,6 +12,14 @@ type MessageRow = {
   created_at: string;
 };
 
+const topBtn: React.CSSProperties = {
+  border: "none",
+  background: "#f1f1f1",
+  padding: "8px 12px",
+  borderRadius: 12,
+  cursor: "pointer",
+};
+
 export default function ChatPage({ params }: { params: { matchId: string } }) {
   const matchId = params.matchId;
 
@@ -21,7 +29,6 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
   const [status, setStatus] = useState("");
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
-
   const canSend = useMemo(() => text.trim().length > 0 && !!userId, [text, userId]);
 
   useEffect(() => {
@@ -39,9 +46,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     if (!userId) return;
     loadMessages();
     const unsub = subscribeToNewMessages();
-    return () => {
-      unsub?.();
-    };
+    return () => unsub?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, matchId]);
 
@@ -67,7 +72,6 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
   }
 
   function subscribeToNewMessages() {
-    // Realtime: listen for new messages in this match
     const channel = supabase
       .channel(`messages:${matchId}`)
       .on(
@@ -75,11 +79,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
         { event: "INSERT", schema: "public", table: "messages", filter: `match_id=eq.${matchId}` },
         (payload) => {
           const row = payload.new as MessageRow;
-          setMessages((prev) => {
-            // avoid duplicates
-            if (prev.some((m) => m.id === row.id)) return prev;
-            return [...prev, row];
-          });
+          setMessages((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, row]));
         }
       )
       .subscribe();
@@ -101,10 +101,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       body,
     });
 
-    if (error) {
-      setStatus(`Send failed: ${error.message}`);
-      return;
-    }
+    if (error) setStatus(`Send failed: ${error.message}`);
   }
 
   async function logout() {
@@ -113,38 +110,42 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
   }
 
   return (
-    <main style={{ maxWidth: 600, margin: "40px auto", fontFamily: "system-ui" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <main className="app-container">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h1 style={{ margin: 0 }}>Chat</h1>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => (window.location.href = "/matches")}>Matches</button>
-          <button onClick={logout}>Logout</button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button style={topBtn} onClick={() => (window.location.href = "/matches")}>
+            💬 Matches
+          </button>
+          <button style={topBtn} onClick={logout}>
+            🚪 Logout
+          </button>
         </div>
       </div>
 
-      <p style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>match_id: {matchId}</p>
+      <p style={{ fontSize: 12, opacity: 0.75, margin: "0 0 12px 0" }}>match_id: {matchId}</p>
 
       {status && (
-        <div style={{ padding: 10, border: "1px solid #ddd", borderRadius: 10, marginTop: 12 }}>
+        <div style={{ padding: 12, border: "1px solid #eee", borderRadius: 14, marginBottom: 12, background: "#fff7f2" }}>
           {status}
         </div>
       )}
 
       <div
         style={{
-          marginTop: 12,
-          border: "1px solid #ddd",
-          borderRadius: 14,
+          border: "1px solid #eee",
+          borderRadius: 18,
           padding: 12,
           height: 360,
           overflowY: "auto",
           display: "flex",
           flexDirection: "column",
           gap: 10,
+          background: "linear-gradient(180deg, #ffffff, #eef2f7)",
         }}
       >
         {messages.length === 0 ? (
-          <div style={{ opacity: 0.7 }}>No messages yet. Say hi 👋</div>
+          <div style={{ opacity: 0.7, color: "#333" }}>No messages yet. Say hi 👋</div>
         ) : (
           messages.map((m) => {
             const mine = m.sender_id === userId;
@@ -154,12 +155,15 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
                 style={{
                   alignSelf: mine ? "flex-end" : "flex-start",
                   maxWidth: "80%",
-                  border: "1px solid #ddd",
-                  borderRadius: 14,
+                  borderRadius: 16,
                   padding: "10px 12px",
+                  background: mine ? "linear-gradient(135deg, #ff416c, #ff4b2b)" : "#ffffff",
+                  color: mine ? "#fff" : "#111",
+                  border: mine ? "none" : "1px solid #eee",
+                  boxShadow: "0 8px 14px rgba(0,0,0,0.08)",
                 }}
               >
-                <div style={{ fontSize: 12, opacity: 0.6 }}>{mine ? "You" : "Them"}</div>
+                <div style={{ fontSize: 12, opacity: 0.85 }}>{mine ? "You" : "Them"}</div>
                 <div style={{ marginTop: 4 }}>{m.body}</div>
               </div>
             );
@@ -168,17 +172,35 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
         <div ref={bottomRef} />
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+      <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Type a message..."
-          style={{ flex: 1, padding: 10 }}
+          style={{
+            flex: 1,
+            padding: 12,
+            borderRadius: 14,
+            border: "1px solid #ddd",
+            outline: "none",
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter") sendMessage();
           }}
         />
-        <button onClick={sendMessage} disabled={!canSend} style={{ padding: "10px 12px" }}>
+        <button
+          onClick={sendMessage}
+          disabled={!canSend}
+          style={{
+            padding: "12px 14px",
+            borderRadius: 14,
+            border: "none",
+            cursor: canSend ? "pointer" : "not-allowed",
+            background: canSend ? "linear-gradient(135deg, #6a11cb, #2575fc)" : "#ddd",
+            color: "white",
+            fontWeight: 800,
+          }}
+        >
           Send
         </button>
       </div>
