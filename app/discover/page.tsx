@@ -126,15 +126,12 @@ export default function DiscoverPage() {
           <p>{current.bio ?? "No bio yet."}</p>
           <small>{current.location_text ?? "No location"}</small>
 
-          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-            <button onClick={() => swipe("pass")} style={{ flex: 1, padding: "10px 12px" }}>
-              Pass
-            </button>
-           
-            <button onClick={() => swipe("like")} style={{ flex: 1, padding: "10px 12px" }}>
-              Like
-            </button>
-          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+  <button onClick={() => (window.location.href = "/matches")}>Matches</button>
+  <button onClick={resetMySwipes}>Reset swipes</button>
+  <button onClick={logout}>Logout</button>
+</div>
+
         </div>
       )}
     </main>
