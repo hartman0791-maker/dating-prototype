@@ -64,14 +64,14 @@ export default function MatchesPage() {
       return;
     }
 
-    const ids = Array.from(
+    const otherIds = Array.from(
       new Set(list.map((m) => (m.user_low === userId ? m.user_high : m.user_low)))
     );
 
     const { data: profData, error: profErr } = await supabase
       .from("profiles")
       .select("id,name,bio,location_text")
-      .in("id", ids);
+      .in("id", otherIds);
 
     if (profErr) {
       setStatus(`Matches loaded, but profiles failed: ${profErr.message}`);
@@ -84,10 +84,6 @@ export default function MatchesPage() {
     setStatus("");
   }
 
-  function goDiscover() {
-    window.location.href = "/discover";
-  }
-
   async function logout() {
     await supabase.auth.signOut();
     window.location.href = "/login";
@@ -98,7 +94,7 @@ export default function MatchesPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ margin: 0 }}>Matches</h1>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={goDiscover}>Discover</button>
+          <button onClick={() => (window.location.href = "/discover")}>Discover</button>
           <button onClick={logout}>Logout</button>
         </div>
       </div>
@@ -130,4 +126,3 @@ export default function MatchesPage() {
     </main>
   );
 }
-
