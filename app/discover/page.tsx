@@ -132,6 +132,7 @@ export default function DiscoverPage() {
   <button onClick={logout}>Logout</button>
 </div>
 
+
         </div>
       )}
     </main>
