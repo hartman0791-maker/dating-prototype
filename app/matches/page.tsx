@@ -112,14 +112,23 @@ export default function MatchesPage() {
             const p = profilesById[otherId];
 
             return (
-              <div key={m.id} style={{ border: "1px solid #ddd", borderRadius: 14, padding: 14 }}>
-                <div style={{ fontWeight: 700, fontSize: 18 }}>{p?.name ?? "Unknown user"}</div>
-                <div style={{ marginTop: 6 }}>{p?.bio ?? "No bio yet."}</div>
-                <div style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>
-                  {p?.location_text ?? "No location"} • match_id: {m.id}
-                </div>
-              </div>
-            );
+  <div key={m.id} style={{ border: "1px solid #ddd", borderRadius: 14, padding: 14 }}>
+    <div style={{ fontWeight: 700, fontSize: 18 }}>{p?.name ?? "Unknown user"}</div>
+    <div style={{ marginTop: 6 }}>{p?.bio ?? "No bio yet."}</div>
+    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>
+      {p?.location_text ?? "No location"}
+    </div>
+
+    {/* Open Chat Button */}
+    <button
+      onClick={() => (window.location.href = `/chat/${m.id}`)}
+      style={{ marginTop: 10 }}
+    >
+      Open chat
+    </button>
+  </div>
+);
+
           })}
         </div>
       )}
