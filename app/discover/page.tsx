@@ -1,26 +1,44 @@
 "use client";
 export {};
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 
-type Profile = {
+type DiscoveryRow = {
   id: string;
   name: string | null;
   bio: string | null;
   location_text: string | null;
-  avatar_url: string | null;
+  avatar_path: string | null;
 };
 
+type ViewProfile = DiscoveryRow & { avatar_signed_url: string | null };
+
 const FALLBACK_AVATAR =
-  "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=1200&q=80";
+  "data:image/svg+xml;charset=utf-8," +
+  encodeURIComponent(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="900" height="900">
+    <defs>
+      <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+        <stop offset="0%" stop-color="#ff4d79"/>
+        <stop offset="100%" stop-color="#ff9a3c"/>
+      </linearGradient>
+    </defs>
+    <rect width="100%" height="100%" fill="url(#g)"/>
+    <circle cx="450" cy="360" r="140" fill="rgba(255,255,255,0.35)"/>
+    <rect x="210" y="520" width="480" height="280" rx="140" fill="rgba(255,255,255,0.35)"/>
+  </svg>
+`);
 
 export default function DiscoverPage() {
   const [userId, setUserId] = useState<string | null>(null);
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [current, setCurrent] = useState<Profile | null>(null);
+  const [profiles, setProfiles] = useState<ViewProfile[]>([]);
+  const [current, setCurrent] = useState<ViewProfile | null>(null);
   const [status, setStatus] = useState("");
   const [anim, setAnim] = useState<"in" | "out">("in");
+
+  // avoid re-signing the same image repeatedly
+  const signedUrlCache = useRef<Record<string, string>>({});
 
   useEffect(() => {
     (async () => {
@@ -35,8 +53,30 @@ export default function DiscoverPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  async function getSignedAvatarUrl(path: string) {
+    if (signedUrlCache.current[path]) return signedUrlCache.current[path];
+
+    const { data, error } = await supabase.storage.from("avatars").createSignedUrl(path, 3600);
+    if (error) return null;
+
+    signedUrlCache.current[path] = data.signedUrl;
+    return data.signedUrl;
+  }
+
+  async function attachSignedUrls(list: DiscoveryRow[]): Promise<ViewProfile[]> {
+    const out: ViewProfile[] = [];
+    for (const p of list) {
+      let signed: string | null = null;
+      if (p.avatar_path) signed = await getSignedAvatarUrl(p.avatar_path);
+      out.push({ ...p, avatar_signed_url: signed });
+    }
+    return out;
+  }
+
   async function loadProfiles() {
     setStatus("Loading...");
+
+    // IMPORTANT: function must return avatar_path now
     const { data, error } = await supabase.rpc("get_discovery_profiles", {
       limit_count: 10,
     });
@@ -46,7 +86,9 @@ export default function DiscoverPage() {
       return;
     }
 
-    const list = (data ?? []) as Profile[];
+    const raw = (data ?? []) as DiscoveryRow[];
+    const list = await attachSignedUrls(raw);
+
     setProfiles(list);
     setCurrent(list[0] ?? null);
     setStatus(list.length ? "" : "No more profiles.");
@@ -55,12 +97,11 @@ export default function DiscoverPage() {
   async function swipe(direction: "like" | "pass") {
     if (!current) return;
 
-    // animate card out
     setAnim("out");
+
     setTimeout(async () => {
       const targetId = current.id;
 
-      // move to next card
       const remaining = profiles.slice(1);
       setProfiles(remaining);
       setCurrent(remaining[0] ?? null);
@@ -108,22 +149,19 @@ export default function DiscoverPage() {
     window.location.href = "/login";
   }
 
-  const photoUrl = current?.avatar_url || FALLBACK_AVATAR;
+  const photoUrl = current?.avatar_signed_url || FALLBACK_AVATAR;
 
   return (
     <main className="app-container">
       <style>{`
-        .card {
-          transition: transform 180ms ease, opacity 180ms ease;
-          will-change: transform, opacity;
-        }
+        .card { transition: transform 180ms ease, opacity 180ms ease; will-change: transform, opacity; }
         .card.in { opacity: 1; transform: translateY(0) scale(1); }
         .card.out { opacity: 0; transform: translateY(10px) scale(0.98); }
       `}</style>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h1 style={{ margin: 0 }}>Discover</h1>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
           <button className="btn btn-gray" onClick={() => (window.location.href = "/matches")}>
             💬 Matches
           </button>
@@ -173,13 +211,7 @@ export default function DiscoverPage() {
               overflow: "hidden",
             }}
           >
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                background: "linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.35) 100%)",
-              }}
-            />
+            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.35) 100%)" }} />
             <div style={{ position: "absolute", left: 14, bottom: 12, color: "white" }}>
               <div style={{ fontWeight: 900, fontSize: 20 }}>{current.name ?? "Unnamed"}</div>
               <div style={{ fontSize: 12, opacity: 0.9 }}>{current.location_text ?? "No location"}</div>
@@ -189,19 +221,11 @@ export default function DiscoverPage() {
           <p style={{ margin: "0 0 10px 0", color: "#444" }}>{current.bio ?? "No bio yet."}</p>
 
           <div style={{ display: "flex", gap: 12 }}>
-            <button
-              className="btn btn-gray"
-              style={{ flex: 1, borderRadius: 30, padding: 14 }}
-              onClick={() => swipe("pass")}
-            >
+            <button className="btn btn-gray" style={{ flex: 1, borderRadius: 30, padding: 14 }} onClick={() => swipe("pass")}>
               ❌ Pass
             </button>
 
-            <button
-              className="btn btn-warm"
-              style={{ flex: 1, borderRadius: 30, padding: 14 }}
-              onClick={() => swipe("like")}
-            >
+            <button className="btn btn-warm" style={{ flex: 1, borderRadius: 30, padding: 14 }} onClick={() => swipe("like")}>
               ❤️ Like
             </button>
           </div>
