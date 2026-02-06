@@ -10,13 +10,13 @@ const softBtn: React.CSSProperties = {
   padding: "12px 14px",
   cursor: "pointer",
   fontWeight: 800,
+  fontFamily: "inherit",
 };
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
-  const [heroOk, setHeroOk] = useState(true);
 
   const canSubmit = useMemo(
     () => email.trim().length > 3 && password.trim().length >= 6,
@@ -52,49 +52,50 @@ export default function LoginPage() {
 
   return (
     <main className="app-container">
-      {/* HERO */}
+      {/* HERO (always visible, no external image) */}
       <div
         style={{
           height: 210,
           borderRadius: 22,
-          overflow: "hidden",
           position: "relative",
+          overflow: "hidden",
           boxShadow: "0 18px 40px rgba(0,0,0,0.12)",
           background:
-            "linear-gradient(135deg, rgba(255,77,121,0.35), rgba(255,154,60,0.25))",
+            "radial-gradient(circle at top left, rgba(255,77,121,0.55), transparent 55%), radial-gradient(circle at bottom right, rgba(255,154,60,0.55), transparent 55%), linear-gradient(135deg, #ff4d79 0%, #ff9a3c 100%)",
         }}
       >
-        {heroOk ? (
-          <img
-            src="https://images.unsplash.com/photo-1520975958225-0cf8f6d617da?auto=format&fit=crop&w=1600&q=80"
-            alt="Welcome"
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            onError={() => setHeroOk(false)}
-          />
-        ) : (
-          <div
-            style={{
-              width: "100%",
-              height: "100%",
-              background:
-                "radial-gradient(circle at top left, #ffe6f0 0%, transparent 45%), radial-gradient(circle at bottom right, #fff1d6 0%, transparent 50%), linear-gradient(135deg, #ff4d79 0%, #ff9a3c 100%)",
-            }}
-          />
-        )}
-
-        {/* overlay for readability */}
+        {/* subtle pattern dots */}
         <div
           style={{
             position: "absolute",
             inset: 0,
-            background:
-              "linear-gradient(135deg, rgba(255,77,121,0.22), rgba(255,154,60,0.18))",
+            backgroundImage:
+              "radial-gradient(rgba(255,255,255,0.35) 1px, transparent 1px)",
+            backgroundSize: "14px 14px",
+            opacity: 0.35,
           }}
         />
+        {/* title overlay */}
+        <div
+          style={{
+            position: "absolute",
+            left: 18,
+            bottom: 18,
+            right: 18,
+            color: "white",
+          }}
+        >
+          <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: 0.2 }}>
+            Dating Prototype
+          </div>
+          <div style={{ marginTop: 6, fontSize: 13, opacity: 0.9 }}>
+            Match • Chat • Connect
+          </div>
+        </div>
       </div>
 
       <div style={{ marginTop: 18 }}>
-        <h1 style={{ margin: "0 0 6px 0" }}>Welcome back</h1>
+        <h1 style={{ margin: "0 0 6px 0" }}>Welcome</h1>
         <p style={{ margin: 0, opacity: 0.85 }}>
           Log in or create an account to start swiping.
         </p>
