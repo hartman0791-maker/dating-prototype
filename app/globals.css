@@ -27,27 +27,48 @@ body {
   backdrop-filter: blur(8px);
 }
 
-/* Typography */
-h1,
-h2 {
-  color: #1b1b1b;
+/* ===== Shared button styles ===== */
+.btn {
+  border: none;
+  border-radius: 14px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: 800;
+  font-family: inherit;
+  transition: transform 0.06s ease, opacity 0.15s ease;
 }
 
-p {
-  color: #2f2f2f;
+.btn:active {
+  transform: scale(0.98);
 }
 
-small {
-  color: #666;
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-warm {
+  background: linear-gradient(135deg, #ff4d79, #ff9a3c);
+  color: white;
+  box-shadow: 0 12px 22px rgba(255, 77, 121, 0.18);
+}
+
+.btn-soft {
+  background: #fff0f6;
+  color: #c2185b;
+  border: 1px solid rgba(194, 24, 91, 0.22);
+}
+
+.btn-gray {
+  background: #f1f1f1;
+  color: #222;
+}
+
+.btn-full {
+  width: 100%;
 }
 
 /* Inputs */
 input {
   font-family: inherit;
 }
-
-/* Buttons */
-button {
-  font-family: inherit;
-}
-
