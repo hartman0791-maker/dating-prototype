@@ -100,9 +100,11 @@ export default function DiscoverPage() {
 
   return (
     <main style={{ maxWidth: 420, margin: "40px auto", fontFamily: "system-ui" }}>
+      {/* Top bar */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ margin: 0 }}>Discover</h1>
         <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => (window.location.href = "/matches")}>Matches</button>
           <button onClick={resetMySwipes}>Reset swipes</button>
           <button onClick={logout}>Logout</button>
         </div>
@@ -126,15 +128,18 @@ export default function DiscoverPage() {
           <p>{current.bio ?? "No bio yet."}</p>
           <small>{current.location_text ?? "No location"}</small>
 
-          <div style={{ display: "flex", gap: 8 }}>
-  <button onClick={() => (window.location.href = "/matches")}>Matches</button>
-  <button onClick={resetMySwipes}>Reset swipes</button>
-  <button onClick={logout}>Logout</button>
-</div>
-
-
+          {/* Like/Pass buttons */}
+          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+            <button onClick={() => swipe("pass")} style={{ flex: 1, padding: "10px 12px" }}>
+              Pass
+            </button>
+            <button onClick={() => swipe("like")} style={{ flex: 1, padding: "10px 12px" }}>
+              Like
+            </button>
+          </div>
         </div>
       )}
     </main>
   );
 }
+
