@@ -103,7 +103,8 @@ export default function DiscoverPage() {
   }
 
   return (
-    <main style={{ maxWidth: 420, margin: "40px auto", fontFamily: "system-ui" }}>
+   <main className="app-container">
+
       {/* Top bar */}
       <div
         style={{
