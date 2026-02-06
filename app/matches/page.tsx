@@ -18,6 +18,14 @@ type Profile = {
   location_text: string | null;
 };
 
+const topBtn: React.CSSProperties = {
+  border: "none",
+  background: "#f1f1f1",
+  padding: "8px 12px",
+  borderRadius: 12,
+  cursor: "pointer",
+};
+
 export default function MatchesPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [matches, setMatches] = useState<MatchRow[]>([]);
@@ -64,9 +72,7 @@ export default function MatchesPage() {
       return;
     }
 
-    const otherIds = Array.from(
-      new Set(list.map((m) => (m.user_low === userId ? m.user_high : m.user_low)))
-    );
+    const otherIds = Array.from(new Set(list.map((m) => (m.user_low === userId ? m.user_high : m.user_low))));
 
     const { data: profData, error: profErr } = await supabase
       .from("profiles")
@@ -90,45 +96,66 @@ export default function MatchesPage() {
   }
 
   return (
-    <main style={{ maxWidth: 520, margin: "40px auto", fontFamily: "system-ui" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <main className="app-container">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h1 style={{ margin: 0 }}>Matches</h1>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => (window.location.href = "/discover")}>Discover</button>
-          <button onClick={logout}>Logout</button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button style={topBtn} onClick={() => (window.location.href = "/discover")}>
+            🔥 Discover
+          </button>
+          <button style={topBtn} onClick={logout}>
+            🚪 Logout
+          </button>
         </div>
       </div>
 
       {status && (
-        <div style={{ padding: 10, border: "1px solid #ddd", borderRadius: 10, marginTop: 12 }}>
+        <div style={{ padding: 12, border: "1px solid #eee", borderRadius: 14, marginBottom: 12, background: "#fff7f2" }}>
           {status}
         </div>
       )}
 
       {matches.length > 0 && (
-        <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
+        <div style={{ display: "grid", gap: 12 }}>
           {matches.map((m) => {
             const otherId = userId ? (m.user_low === userId ? m.user_high : m.user_low) : "";
             const p = profilesById[otherId];
 
             return (
-  <div key={m.id} style={{ border: "1px solid #ddd", borderRadius: 14, padding: 14 }}>
-    <div style={{ fontWeight: 700, fontSize: 18 }}>{p?.name ?? "Unknown user"}</div>
-    <div style={{ marginTop: 6 }}>{p?.bio ?? "No bio yet."}</div>
-    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>
-      {p?.location_text ?? "No location"}
-    </div>
+              <div
+                key={m.id}
+                style={{
+                  border: "1px solid #eee",
+                  borderRadius: 18,
+                  padding: 16,
+                  background: "linear-gradient(180deg, #ffffff, #eef2f7)",
+                  boxShadow: "0 10px 18px rgba(0,0,0,0.08)",
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: 18, color: "#111" }}>{p?.name ?? "Unknown user"}</div>
+                <div style={{ marginTop: 6, color: "#444" }}>{p?.bio ?? "No bio yet."}</div>
+                <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75, color: "#444" }}>
+                  {p?.location_text ?? "No location"} • match_id: {m.id}
+                </div>
 
-    {/* Open Chat Button */}
-    <button
-      onClick={() => (window.location.href = `/chat/${m.id}`)}
-      style={{ marginTop: 10 }}
-    >
-      Open chat
-    </button>
-  </div>
-);
-
+                <button
+                  onClick={() => (window.location.href = `/chat/${m.id}`)}
+                  style={{
+                    marginTop: 12,
+                    width: "100%",
+                    border: "none",
+                    borderRadius: 14,
+                    padding: "10px 12px",
+                    cursor: "pointer",
+                    background: "linear-gradient(135deg, #6a11cb, #2575fc)",
+                    color: "white",
+                    fontWeight: 700,
+                  }}
+                >
+                  💬 Open chat
+                </button>
+              </div>
+            );
           })}
         </div>
       )}
