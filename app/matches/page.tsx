@@ -1,7 +1,7 @@
 "use client";
 export {};
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 
 type MatchRow = {
@@ -16,17 +16,34 @@ type Profile = {
   name: string | null;
   bio: string | null;
   location_text: string | null;
-  avatar_url: string | null;
+  avatar_path: string | null;
 };
 
+type ProfileView = Profile & { avatar_signed_url: string | null };
+
 const FALLBACK_AVATAR =
-  "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=600&q=80";
+  "data:image/svg+xml;charset=utf-8," +
+  encodeURIComponent(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="600" height="600">
+    <defs>
+      <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+        <stop offset="0%" stop-color="#ff4d79"/>
+        <stop offset="100%" stop-color="#ff9a3c"/>
+      </linearGradient>
+    </defs>
+    <rect width="100%" height="100%" fill="url(#g)"/>
+    <circle cx="300" cy="240" r="90" fill="rgba(255,255,255,0.35)"/>
+    <rect x="150" y="340" width="300" height="170" rx="85" fill="rgba(255,255,255,0.35)"/>
+  </svg>
+`);
 
 export default function MatchesPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [matches, setMatches] = useState<MatchRow[]>([]);
-  const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
+  const [profilesById, setProfilesById] = useState<Record<string, ProfileView>>({});
   const [status, setStatus] = useState("");
+
+  const signedUrlCache = useRef<Record<string, string>>({});
 
   useEffect(() => {
     (async () => {
@@ -44,6 +61,16 @@ export default function MatchesPage() {
     loadMatches();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
+
+  async function getSignedAvatarUrl(path: string) {
+    if (signedUrlCache.current[path]) return signedUrlCache.current[path];
+
+    const { data, error } = await supabase.storage.from("avatars").createSignedUrl(path, 3600);
+    if (error) return null;
+
+    signedUrlCache.current[path] = data.signedUrl;
+    return data.signedUrl;
+  }
 
   async function loadMatches() {
     setStatus("Loading matches...");
@@ -72,7 +99,7 @@ export default function MatchesPage() {
 
     const { data: profData, error: profErr } = await supabase
       .from("profiles")
-      .select("id,name,bio,location_text,avatar_url")
+      .select("id,name,bio,location_text,avatar_path")
       .in("id", otherIds);
 
     if (profErr) {
@@ -80,8 +107,13 @@ export default function MatchesPage() {
       return;
     }
 
-    const map: Record<string, Profile> = {};
-    for (const p of (profData ?? []) as Profile[]) map[p.id] = p;
+    const map: Record<string, ProfileView> = {};
+    for (const p of (profData ?? []) as Profile[]) {
+      let signed: string | null = null;
+      if (p.avatar_path) signed = await getSignedAvatarUrl(p.avatar_path);
+      map[p.id] = { ...p, avatar_signed_url: signed };
+    }
+
     setProfilesById(map);
     setStatus("");
   }
@@ -95,9 +127,12 @@ export default function MatchesPage() {
     <main className="app-container">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h1 style={{ margin: 0 }}>Matches</h1>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
           <button className="btn btn-gray" onClick={() => (window.location.href = "/discover")}>
             🔥 Discover
+          </button>
+          <button className="btn btn-gray" onClick={() => (window.location.href = "/profile")}>
+            👤 Profile
           </button>
           <button className="btn btn-gray" onClick={logout}>
             🚪 Logout
@@ -116,7 +151,7 @@ export default function MatchesPage() {
           {matches.map((m) => {
             const otherId = userId ? (m.user_low === userId ? m.user_high : m.user_low) : "";
             const p = profilesById[otherId];
-            const photo = p?.avatar_url || FALLBACK_AVATAR;
+            const photo = p?.avatar_signed_url || FALLBACK_AVATAR;
 
             return (
               <div
@@ -140,21 +175,16 @@ export default function MatchesPage() {
                     backgroundSize: "cover",
                     backgroundPosition: "center",
                     flex: "0 0 auto",
+                    boxShadow: "0 10px 18px rgba(0,0,0,0.10)",
                   }}
                 />
 
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 900, fontSize: 18 }}>{p?.name ?? "Unknown user"}</div>
                   <div style={{ marginTop: 4, color: "#444" }}>{p?.bio ?? "No bio yet."}</div>
-                  <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
-                    {p?.location_text ?? "No location"}
-                  </div>
+                  <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>{p?.location_text ?? "No location"}</div>
 
-                  <button
-                    className="btn btn-warm btn-full"
-                    style={{ marginTop: 10 }}
-                    onClick={() => (window.location.href = `/chat/${m.id}`)}
-                  >
+                  <button className="btn btn-warm btn-full" style={{ marginTop: 10 }} onClick={() => (window.location.href = `/chat/${m.id}`)}>
                     💬 Open chat
                   </button>
                 </div>
@@ -166,4 +196,3 @@ export default function MatchesPage() {
     </main>
   );
 }
-
