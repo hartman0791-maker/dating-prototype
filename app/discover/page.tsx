@@ -136,6 +136,7 @@ export default function DiscoverPage() {
   <button onClick={logout}>Logout</button>
 </div>
 
+
             <button onClick={() => swipe("like")} style={{ flex: 1, padding: "10px 12px" }}>
               Like
             </button>
