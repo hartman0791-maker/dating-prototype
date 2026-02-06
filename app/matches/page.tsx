@@ -16,15 +16,11 @@ type Profile = {
   name: string | null;
   bio: string | null;
   location_text: string | null;
+  avatar_url: string | null;
 };
 
-const topBtn: React.CSSProperties = {
-  border: "none",
-  background: "#f1f1f1",
-  padding: "8px 12px",
-  borderRadius: 12,
-  cursor: "pointer",
-};
+const FALLBACK_AVATAR =
+  "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=600&q=80";
 
 export default function MatchesPage() {
   const [userId, setUserId] = useState<string | null>(null);
@@ -76,7 +72,7 @@ export default function MatchesPage() {
 
     const { data: profData, error: profErr } = await supabase
       .from("profiles")
-      .select("id,name,bio,location_text")
+      .select("id,name,bio,location_text,avatar_url")
       .in("id", otherIds);
 
     if (profErr) {
@@ -100,17 +96,17 @@ export default function MatchesPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h1 style={{ margin: 0 }}>Matches</h1>
         <div style={{ display: "flex", gap: 10 }}>
-          <button style={topBtn} onClick={() => (window.location.href = "/discover")}>
+          <button className="btn btn-gray" onClick={() => (window.location.href = "/discover")}>
             🔥 Discover
           </button>
-          <button style={topBtn} onClick={logout}>
+          <button className="btn btn-gray" onClick={logout}>
             🚪 Logout
           </button>
         </div>
       </div>
 
       {status && (
-        <div style={{ padding: 12, border: "1px solid #eee", borderRadius: 14, marginBottom: 12, background: "#fff7f2" }}>
+        <div style={{ padding: 12, borderRadius: 14, background: "rgba(255, 244, 235, 0.85)", marginBottom: 12 }}>
           {status}
         </div>
       )}
@@ -120,40 +116,48 @@ export default function MatchesPage() {
           {matches.map((m) => {
             const otherId = userId ? (m.user_low === userId ? m.user_high : m.user_low) : "";
             const p = profilesById[otherId];
+            const photo = p?.avatar_url || FALLBACK_AVATAR;
 
             return (
               <div
                 key={m.id}
                 style={{
-                  border: "1px solid #eee",
+                  display: "flex",
+                  gap: 12,
+                  alignItems: "center",
                   borderRadius: 18,
-                  padding: 16,
+                  padding: 14,
                   background: "linear-gradient(180deg, #ffffff, #eef2f7)",
                   boxShadow: "0 10px 18px rgba(0,0,0,0.08)",
                 }}
               >
-                <div style={{ fontWeight: 800, fontSize: 18, color: "#111" }}>{p?.name ?? "Unknown user"}</div>
-                <div style={{ marginTop: 6, color: "#444" }}>{p?.bio ?? "No bio yet."}</div>
-                <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75, color: "#444" }}>
-                  {p?.location_text ?? "No location"} • match_id: {m.id}
-                </div>
-
-                <button
-                  onClick={() => (window.location.href = `/chat/${m.id}`)}
+                <div
                   style={{
-                    marginTop: 12,
-                    width: "100%",
-                    border: "none",
-                    borderRadius: 14,
-                    padding: "10px 12px",
-                    cursor: "pointer",
-                    background: "linear-gradient(135deg, #6a11cb, #2575fc)",
-                    color: "white",
-                    fontWeight: 700,
+                    width: 62,
+                    height: 62,
+                    borderRadius: 18,
+                    backgroundImage: `url(${photo})`,
+                    backgroundSize: "cover",
+                    backgroundPosition: "center",
+                    flex: "0 0 auto",
                   }}
-                >
-                  💬 Open chat
-                </button>
+                />
+
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 900, fontSize: 18 }}>{p?.name ?? "Unknown user"}</div>
+                  <div style={{ marginTop: 4, color: "#444" }}>{p?.bio ?? "No bio yet."}</div>
+                  <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
+                    {p?.location_text ?? "No location"}
+                  </div>
+
+                  <button
+                    className="btn btn-warm btn-full"
+                    style={{ marginTop: 10 }}
+                    onClick={() => (window.location.href = `/chat/${m.id}`)}
+                  >
+                    💬 Open chat
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -162,3 +166,4 @@ export default function MatchesPage() {
     </main>
   );
 }
+
