@@ -9,11 +9,24 @@ type Profile = {
   name: string | null;
   bio: string | null;
   location_text: string | null;
-  avatar_url: string | null;
+  avatar_path: string | null;
 };
 
 const FALLBACK_AVATAR =
-  "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80";
+  "data:image/svg+xml;charset=utf-8," +
+  encodeURIComponent(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="600" height="600">
+    <defs>
+      <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+        <stop offset="0%" stop-color="#ff4d79"/>
+        <stop offset="100%" stop-color="#ff9a3c"/>
+      </linearGradient>
+    </defs>
+    <rect width="100%" height="100%" fill="url(#g)"/>
+    <circle cx="300" cy="240" r="90" fill="rgba(255,255,255,0.35)"/>
+    <rect x="150" y="340" width="300" height="170" rx="85" fill="rgba(255,255,255,0.35)"/>
+  </svg>
+`);
 
 export default function ProfilePage() {
   const [userId, setUserId] = useState<string | null>(null);
@@ -24,6 +37,8 @@ export default function ProfilePage() {
   const [locationText, setLocationText] = useState("");
   const [status, setStatus] = useState("");
   const [uploading, setUploading] = useState(false);
+
+  const [avatarUrl, setAvatarUrl] = useState<string>(FALLBACK_AVATAR);
 
   const canSave = useMemo(() => !!userId, [userId]);
 
@@ -45,7 +60,7 @@ export default function ProfilePage() {
 
     const { data, error } = await supabase
       .from("profiles")
-      .select("id,name,bio,location_text,avatar_url")
+      .select("id,name,bio,location_text,avatar_path")
       .eq("id", uid)
       .single();
 
@@ -60,6 +75,23 @@ export default function ProfilePage() {
     setBio(p.bio ?? "");
     setLocationText(p.location_text ?? "");
     setStatus("");
+
+    if (p.avatar_path) {
+      const url = await getSignedAvatarUrl(p.avatar_path);
+      if (url) setAvatarUrl(url);
+    } else {
+      setAvatarUrl(FALLBACK_AVATAR);
+    }
+  }
+
+  async function getSignedAvatarUrl(path: string) {
+    // 1 hour signed URL
+    const { data, error } = await supabase.storage.from("avatars").createSignedUrl(path, 3600);
+    if (error) {
+      console.log("signed url error:", error.message);
+      return null;
+    }
+    return data.signedUrl;
   }
 
   async function saveProfile() {
@@ -91,13 +123,13 @@ export default function ProfilePage() {
     setUploading(true);
     setStatus("Uploading photo...");
 
-    // File path inside bucket
-    const ext = file.name.split(".").pop() || "jpg";
-    const path = `${userId}.${ext}`;
+    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+    const path = `${userId}/avatar.${ext}`; // IMPORTANT: matches RLS policy
 
-    const { error: upErr } = await supabase.storage
-      .from("avatars")
-      .upload(path, file, { upsert: true, contentType: file.type });
+    const { error: upErr } = await supabase.storage.from("avatars").upload(path, file, {
+      upsert: true,
+      contentType: file.type,
+    });
 
     if (upErr) {
       setUploading(false);
@@ -105,32 +137,26 @@ export default function ProfilePage() {
       return;
     }
 
-    // Get public URL (bucket should be Public for easiest prototype)
-    const { data: pub } = supabase.storage.from("avatars").getPublicUrl(path);
-    const publicUrl = pub.publicUrl;
-
-    const { error: profErr } = await supabase
-      .from("profiles")
-      .update({ avatar_url: publicUrl })
-      .eq("id", userId);
-
-    setUploading(false);
+    // Save only the path (NOT a public URL)
+    const { error: profErr } = await supabase.from("profiles").update({ avatar_path: path }).eq("id", userId);
 
     if (profErr) {
-      setStatus(`Saved photo URL failed: ${profErr.message}`);
+      setUploading(false);
+      setStatus(`Saving avatar path failed: ${profErr.message}`);
       return;
     }
 
+    const signed = await getSignedAvatarUrl(path);
+    if (signed) setAvatarUrl(signed);
+
+    setUploading(false);
     setStatus("Photo updated ✅");
-    await loadProfile(userId);
   }
 
   async function logout() {
     await supabase.auth.signOut();
     window.location.href = "/login";
   }
-
-  const avatar = profile?.avatar_url || FALLBACK_AVATAR;
 
   return (
     <main className="app-container">
@@ -166,7 +192,7 @@ export default function ProfilePage() {
               width: 92,
               height: 92,
               borderRadius: 22,
-              backgroundImage: `url(${avatar})`,
+              backgroundImage: `url(${avatarUrl})`,
               backgroundSize: "cover",
               backgroundPosition: "center",
               boxShadow: "0 10px 18px rgba(0,0,0,0.10)",
@@ -174,9 +200,7 @@ export default function ProfilePage() {
           />
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 900, fontSize: 18 }}>{name || "Your name"}</div>
-            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
-              {userId ? `id: ${userId}` : ""}
-            </div>
+            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>{userId ? `id: ${userId}` : ""}</div>
 
             <label
               className="btn btn-soft"
@@ -206,28 +230,13 @@ export default function ProfilePage() {
 
         <div style={{ marginTop: 16, display: "grid", gap: 10 }}>
           <label style={{ fontSize: 13, fontWeight: 800 }}>Name</label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            style={{ padding: 12, borderRadius: 14, border: "1px solid rgba(0,0,0,0.12)" }}
-            placeholder="Your name"
-          />
+          <input value={name} onChange={(e) => setName(e.target.value)} style={{ padding: 12, borderRadius: 14, border: "1px solid rgba(0,0,0,0.12)" }} />
 
           <label style={{ fontSize: 13, fontWeight: 800 }}>Bio</label>
-          <input
-            value={bio}
-            onChange={(e) => setBio(e.target.value)}
-            style={{ padding: 12, borderRadius: 14, border: "1px solid rgba(0,0,0,0.12)" }}
-            placeholder="Short bio"
-          />
+          <input value={bio} onChange={(e) => setBio(e.target.value)} style={{ padding: 12, borderRadius: 14, border: "1px solid rgba(0,0,0,0.12)" }} />
 
           <label style={{ fontSize: 13, fontWeight: 800 }}>Location</label>
-          <input
-            value={locationText}
-            onChange={(e) => setLocationText(e.target.value)}
-            style={{ padding: 12, borderRadius: 14, border: "1px solid rgba(0,0,0,0.12)" }}
-            placeholder="Toronto"
-          />
+          <input value={locationText} onChange={(e) => setLocationText(e.target.value)} style={{ padding: 12, borderRadius: 14, border: "1px solid rgba(0,0,0,0.12)" }} />
 
           <button className="btn btn-warm btn-full" disabled={!canSave} onClick={saveProfile}>
             Save changes
