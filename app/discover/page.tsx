@@ -20,6 +20,7 @@ export default function DiscoverPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [current, setCurrent] = useState<Profile | null>(null);
   const [status, setStatus] = useState("");
+  const [anim, setAnim] = useState<"in" | "out">("in");
 
   useEffect(() => {
     (async () => {
@@ -54,27 +55,33 @@ export default function DiscoverPage() {
   async function swipe(direction: "like" | "pass") {
     if (!current) return;
 
-    const targetId = current.id;
+    // animate card out
+    setAnim("out");
+    setTimeout(async () => {
+      const targetId = current.id;
 
-    const remaining = profiles.slice(1);
-    setProfiles(remaining);
-    setCurrent(remaining[0] ?? null);
+      // move to next card
+      const remaining = profiles.slice(1);
+      setProfiles(remaining);
+      setCurrent(remaining[0] ?? null);
+      setAnim("in");
 
-    const { data, error } = await supabase.rpc("swipe_and_maybe_match", {
-      target_user_id: targetId,
-      swipe_dir: direction,
-    });
+      const { data, error } = await supabase.rpc("swipe_and_maybe_match", {
+        target_user_id: targetId,
+        swipe_dir: direction,
+      });
 
-    if (error) {
-      setStatus(`Error: ${error.message}`);
-      return;
-    }
+      if (error) {
+        setStatus(`Error: ${error.message}`);
+        return;
+      }
 
-    const result = Array.isArray(data) ? data[0] : data;
-    if (result?.matched) setStatus(`It's a match! match_id: ${result.match_id}`);
-    else setStatus("");
+      const result = Array.isArray(data) ? data[0] : data;
+      if (result?.matched) setStatus(`It's a match! match_id: ${result.match_id}`);
+      else setStatus("");
 
-    if (remaining.length < 3) loadProfiles();
+      if (remaining.length < 3) loadProfiles();
+    }, 180);
   }
 
   async function resetMySwipes() {
@@ -105,12 +112,23 @@ export default function DiscoverPage() {
 
   return (
     <main className="app-container">
-      {/* Top bar */}
+      <style>{`
+        .card {
+          transition: transform 180ms ease, opacity 180ms ease;
+          will-change: transform, opacity;
+        }
+        .card.in { opacity: 1; transform: translateY(0) scale(1); }
+        .card.out { opacity: 0; transform: translateY(10px) scale(0.98); }
+      `}</style>
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h1 style={{ margin: 0 }}>Discover</h1>
         <div style={{ display: "flex", gap: 10 }}>
           <button className="btn btn-gray" onClick={() => (window.location.href = "/matches")}>
             💬 Matches
+          </button>
+          <button className="btn btn-gray" onClick={() => (window.location.href = "/profile")}>
+            👤 Profile
           </button>
           <button className="btn btn-soft" onClick={resetMySwipes}>
             🔄 Reset
@@ -135,34 +153,55 @@ export default function DiscoverPage() {
         </button>
       ) : (
         <div
+          className={`card ${anim}`}
           style={{
             padding: 20,
-            borderRadius: 20,
+            borderRadius: 22,
             background: "linear-gradient(180deg, #ffffff, #eef2f7)",
-            boxShadow: "0 12px 24px rgba(0,0,0,0.1)",
-            color: "#111",
+            boxShadow: "0 14px 28px rgba(0,0,0,0.10)",
           }}
         >
           <div
             style={{
-              height: 240,
+              height: 260,
               borderRadius: 18,
               backgroundImage: `url(${photoUrl})`,
               backgroundSize: "cover",
               backgroundPosition: "center",
               marginBottom: 16,
+              position: "relative",
+              overflow: "hidden",
             }}
-          />
+          >
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.35) 100%)",
+              }}
+            />
+            <div style={{ position: "absolute", left: 14, bottom: 12, color: "white" }}>
+              <div style={{ fontWeight: 900, fontSize: 20 }}>{current.name ?? "Unnamed"}</div>
+              <div style={{ fontSize: 12, opacity: 0.9 }}>{current.location_text ?? "No location"}</div>
+            </div>
+          </div>
 
-          <h2 style={{ margin: "0 0 6px 0" }}>{current.name ?? "Unnamed"}</h2>
-          <p style={{ margin: "0 0 8px 0", color: "#444" }}>{current.bio ?? "No bio yet."}</p>
-          <small style={{ color: "#666" }}>{current.location_text ?? "No location"}</small>
+          <p style={{ margin: "0 0 10px 0", color: "#444" }}>{current.bio ?? "No bio yet."}</p>
 
-          <div style={{ display: "flex", gap: 12, marginTop: 18 }}>
-            <button className="btn btn-gray" style={{ flex: 1, borderRadius: 30, padding: 14 }} onClick={() => swipe("pass")}>
+          <div style={{ display: "flex", gap: 12 }}>
+            <button
+              className="btn btn-gray"
+              style={{ flex: 1, borderRadius: 30, padding: 14 }}
+              onClick={() => swipe("pass")}
+            >
               ❌ Pass
             </button>
-            <button className="btn btn-warm" style={{ flex: 1, borderRadius: 30, padding: 14 }} onClick={() => swipe("like")}>
+
+            <button
+              className="btn btn-warm"
+              style={{ flex: 1, borderRadius: 30, padding: 14 }}
+              onClick={() => swipe("like")}
+            >
               ❤️ Like
             </button>
           </div>
