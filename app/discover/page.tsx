@@ -1,3 +1,4 @@
+
 "use client";
 export {};
 
@@ -68,8 +69,11 @@ export default function DiscoverPage() {
     }
 
     const result = Array.isArray(data) ? data[0] : data;
-    if (result?.matched) setStatus(`It's a match! match_id: ${result.match_id}`);
-    else setStatus("");
+    if (result?.matched) {
+      setStatus(`It's a match! match_id: ${result.match_id}`);
+    } else {
+      setStatus("");
+    }
 
     if (remaining.length < 3) loadProfiles();
   }
@@ -99,10 +103,16 @@ export default function DiscoverPage() {
   }
 
   return (
-   <main className="app-container">
-
+    <main style={{ maxWidth: 420, margin: "40px auto", fontFamily: "system-ui" }}>
       {/* Top bar */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 16,
+        }}
+      >
         <h1 style={{ margin: 0 }}>Discover</h1>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={() => (window.location.href = "/matches")}>Matches</button>
@@ -111,10 +121,21 @@ export default function DiscoverPage() {
         </div>
       </div>
 
-      {userId && <p style={{ fontSize: 12, opacity: 0.7 }}>Logged in as: {userId}</p>}
+      {userId && (
+        <p style={{ fontSize: 12, opacity: 0.7, marginBottom: 12 }}>
+          Logged in as: {userId}
+        </p>
+      )}
 
       {status && (
-        <div style={{ padding: 10, border: "1px solid #ddd", borderRadius: 10, marginBottom: 12 }}>
+        <div
+          style={{
+            padding: 10,
+            border: "1px solid #ddd",
+            borderRadius: 10,
+            marginBottom: 12,
+          }}
+        >
           {status}
         </div>
       )}
@@ -124,18 +145,73 @@ export default function DiscoverPage() {
           Reload
         </button>
       ) : (
-        <div style={{ padding: 16, border: "1px solid #ddd", borderRadius: 14 }}>
-          <h2 style={{ margin: 0 }}>{current.name ?? "Unnamed"}</h2>
-          <p>{current.bio ?? "No bio yet."}</p>
-          <small>{current.location_text ?? "No location"}</small>
+        /* ===== PROFILE CARD JSX (REPLACED) ===== */
+        <div
+          style={{
+            padding: 20,
+            borderRadius: 20,
+            background: "linear-gradient(180deg, #ffffff, #f5f7fa)",
+            boxShadow: "0 12px 24px rgba(0,0,0,0.1)",
+          }}
+        >
+          <div
+            style={{
+              height: 200,
+              borderRadius: 16,
+              backgroundImage:
+                "url(https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e)",
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              marginBottom: 16,
+            }}
+          />
 
-          {/* Like/Pass buttons */}
-          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-            <button onClick={() => swipe("pass")} style={{ flex: 1, padding: "10px 12px" }}>
-              Pass
+          <h2 style={{ margin: "0 0 6px 0" }}>{current.name ?? "Unnamed"}</h2>
+
+          <p style={{ margin: "0 0 8px 0", color: "#555" }}>
+            {current.bio ?? "No bio yet."}
+          </p>
+
+          <small style={{ color: "#777" }}>
+            {current.location_text ?? "No location"}
+          </small>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              marginTop: 20,
+            }}
+          >
+            <button
+              onClick={() => swipe("pass")}
+              style={{
+                flex: 1,
+                padding: 14,
+                borderRadius: 30,
+                border: "none",
+                background: "#eee",
+                fontSize: 16,
+                cursor: "pointer",
+              }}
+            >
+              ❌ Pass
             </button>
-            <button onClick={() => swipe("like")} style={{ flex: 1, padding: "10px 12px" }}>
-              Like
+
+            <button
+              onClick={() => swipe("like")}
+              style={{
+                flex: 1,
+                padding: 14,
+                borderRadius: 30,
+                border: "none",
+                background: "linear-gradient(135deg, #ff416c, #ff4b2b)",
+                color: "white",
+                fontSize: 16,
+                cursor: "pointer",
+              }}
+            >
+              ❤️ Like
             </button>
           </div>
         </div>
@@ -143,4 +219,3 @@ export default function DiscoverPage() {
     </main>
   );
 }
-
