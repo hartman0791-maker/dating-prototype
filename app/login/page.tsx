@@ -298,7 +298,7 @@ export default function LoginPage() {
       `}</style>
 
       <div className="wrap">
-        {/* This mirrors the “Many companies…” disclosure line seen on the splash page :contentReference[oaicite:1]{index=1} */}
+       
         <p className="topDisclosure">
           Many companies featured here may advertise with us.{" "}
           <a href="#" aria-label="Learn more">Learn more</a>
