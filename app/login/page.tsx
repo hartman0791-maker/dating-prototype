@@ -211,12 +211,7 @@ export default function LoginPage() {
             >
               Sign up
             </button>
-          </div>
-
-          <p style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
-            After logging in, you’ll be sent to <b>/discover</b>.
-          </p>
-        </div>
+         
       </div>
     </main>
   );
