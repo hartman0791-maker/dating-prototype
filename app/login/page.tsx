@@ -78,9 +78,6 @@ export default function LoginPage() {
     <main className="moneyBg">
       <style>{`
         :root{
-          --bgA:#ff4d79;
-          --bgB:#ff7d54;
-          --bgC:#ff9a3c;
           --card:#ffffff;
           --ink:#0b1220;
           --muted:#5b6475;
@@ -91,7 +88,6 @@ export default function LoginPage() {
           --btnText:#ffffff;
           --stroke: rgba(17,24,39,.10);
           --fieldBg: rgba(15,23,42,.04);
-          --link:#334155;
         }
 
         .moneyBg{
@@ -106,20 +102,13 @@ export default function LoginPage() {
           color:var(--ink);
         }
 
-        .wrap{
-          width:min(720px, 100%);
-        }
+        .wrap{ width:min(720px, 100%); }
 
         .topDisclosure{
           text-align:center;
           color:rgba(255,255,255,.78);
           font-size:12px;
-          line-height:1.4;
           margin:0 0 12px 0;
-        }
-        .topDisclosure a{
-          color:rgba(255,255,255,.9);
-          text-decoration:underline;
         }
 
         .card{
@@ -132,22 +121,21 @@ export default function LoginPage() {
         .hero{
           position:relative;
           height:190px;
-          background-image: url(${HERO_ILLUSTRATION});
-          background-size: cover;
+          background-image:url(${HERO_ILLUSTRATION});
+          background-size:cover;
           background-position:center;
         }
         .hero::after{
           content:"";
           position:absolute;
           inset:0;
-          background: linear-gradient(180deg, rgba(0,0,0,.08) 0%, rgba(0,0,0,.36) 100%);
+          background:linear-gradient(180deg, rgba(0,0,0,.08), rgba(0,0,0,.36));
         }
         .heroInner{
           position:absolute;
           left:18px;
           right:18px;
           bottom:16px;
-          z-index:1;
           color:white;
           display:flex;
           align-items:center;
@@ -155,26 +143,23 @@ export default function LoginPage() {
         }
         .logo{
           width:40px;height:40px;border-radius:14px;
-          background: rgba(255,255,255,.20);
+          background:rgba(255,255,255,.20);
           border:1px solid rgba(255,255,255,.28);
           display:grid;place-items:center;
-          backdrop-filter: blur(6px);
+          backdrop-filter:blur(6px);
         }
         .brandTitle{
           font-size:20px;
           font-weight:950;
           letter-spacing:-0.02em;
-          margin:0;
         }
         .brandSub{
-          margin-top:4px;
           font-size:13px;
           opacity:.92;
+          margin-top:4px;
         }
 
-        .body{
-          padding:22px;
-        }
+        .body{ padding:22px; }
 
         h1{
           margin:0 0 8px 0;
@@ -185,152 +170,102 @@ export default function LoginPage() {
           margin:0 0 16px 0;
           color:var(--muted);
           font-size:14px;
-          line-height:1.5;
         }
 
         .status{
-          margin: 12px 0 0 0;
-          padding: 12px;
-          border-radius: 14px;
-          background: rgba(255, 244, 235, 0.9);
-          border: 1px solid rgba(255, 170, 120, 0.35);
-          font-size: 13px;
+          margin-top:12px;
+          padding:12px;
+          border-radius:14px;
+          background:rgba(255,244,235,.9);
+          border:1px solid rgba(255,170,120,.35);
+          font-size:13px;
         }
 
-        .grid{
-          display:grid;
-          gap:10px;
-          margin-top:14px;
-        }
+        .grid{ display:grid; gap:10px; margin-top:14px; }
 
         .label{
           font-size:12px;
           font-weight:800;
-          color: var(--muted);
-          margin: 2px 0 -2px 2px;
+          color:var(--muted);
+          margin-left:2px;
         }
 
         .input{
           width:100%;
-          padding: 13px 14px;
-          border-radius: 14px;
-          border: 1px solid var(--stroke);
-          background: var(--fieldBg);
-          font-size: 15px;
-          outline: none;
-          font-family: inherit;
+          padding:13px 14px;
+          border-radius:14px;
+          border:1px solid var(--stroke);
+          background:var(--fieldBg);
+          font-size:15px;
+          outline:none;
         }
         .input:focus{
-          border-color: rgba(59,130,246,.55);
-          box-shadow: 0 0 0 4px rgba(59,130,246,.15);
-          background: white;
+          border-color:rgba(59,130,246,.55);
+          box-shadow:0 0 0 4px rgba(59,130,246,.15);
+          background:white;
         }
 
         .btnRow{
           display:flex;
           gap:10px;
-          margin-top: 12px;
+          margin-top:12px;
         }
 
         .btn{
+          width:100%;
           border:0;
           border-radius:14px;
-          padding: 12px 14px;
+          padding:12px 14px;
           cursor:pointer;
-          font-weight: 900;
-          font-family: inherit;
-          transition: transform .06s ease, background .15s ease, opacity .15s ease;
-          width:100%;
+          font-weight:900;
         }
-        .btn:active{ transform: translateY(1px); }
-
-        /* Money-like: big dark primary buttons */
         .btnPrimary{
-          background: var(--btn);
-          color: var(--btnText);
+          background:var(--btn);
+          color:var(--btnText);
         }
-        .btnPrimary:hover{ background: var(--btnHover); }
-
-        /* Soft secondary button */
+        .btnPrimary:hover{ background:var(--btnHover); }
         .btnSoft{
-          background: rgba(17,24,39,.06);
-          color: #111827;
-          border: 1px solid var(--stroke);
+          background:rgba(17,24,39,.06);
+          border:1px solid var(--stroke);
+          color:#111827;
         }
-        .btnSoft:hover{ background: rgba(17,24,39,.09); }
-
-        .consent{
-          margin-top: 12px;
-          font-size: 12px;
-          color: var(--muted);
-          line-height: 1.4;
-        }
-        .consent a{
-          color: var(--link);
-          text-decoration: underline;
-        }
-
-        .secondaryLink{
-          margin-top: 10px;
-          font-size: 13px;
-          color: var(--muted);
-        }
-        .secondaryLink a{
-          color: var(--link);
-          text-decoration:none;
-          font-weight:700;
-        }
-        .secondaryLink a:hover{ text-decoration: underline; }
 
         .footer{
-          margin-top: 14px;
+          margin-top:14px;
           text-align:center;
-          color: rgba(255,255,255,.68);
-          font-size: 12px;
-          line-height: 1.4;
-        }
-
-        @media (min-width: 640px){
-          .btnRow{ gap:12px; }
-          h1{ font-size: 34px; }
-          .hero{ height: 210px; }
+          color:rgba(255,255,255,.68);
+          font-size:12px;
         }
       `}</style>
 
       <div className="wrap">
-       
         <p className="topDisclosure">
-      
-           </p>
+          Many companies featured here may advertise with us.
+        </p>
 
         <div className="card">
-          {/* Hero header */}
           <div className="hero">
             <div className="heroInner">
-              <div className="logo" aria-label="Logo">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <div className="logo">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
                   <path
                     d="M12 21s-7-4.5-9.5-9C.2 8.6 2.3 5 6.4 5c2 0 3.4 1 4.6 2.4C12.2 6 13.6 5 15.6 5c4.1 0 6.2 3.6 3.9 7-2.5 4.5-9.5 9-9.5 9z"
                     fill="white"
-                    opacity="0.95"
                   />
                 </svg>
               </div>
               <div>
-                <div className="brandTitle">Modern &amp; Catchy Dating</div>
+                <div className="brandTitle">Modern & Catchy Dating</div>
                 <div className="brandSub">Match • Chat • Connect</div>
               </div>
             </div>
           </div>
 
-          {/* Body */}
           <div className="body">
-            <h1>Find your perfect match</h1>
-            <p className="sub">
-              Log in or create an account to start swiping.
-            </p>
+            <h1>Welcome</h1>
+            <p className="sub">Log in or create an account to start swiping.</p>
 
-            {status ? <div className="status">{status}</div> : null}
+            {status && <div className="status">{status}</div>}
 
             <div className="grid">
               <div className="label">Email</div>
@@ -339,7 +274,6 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@email.com"
-                autoComplete="email"
               />
 
               <div className="label" style={{ marginTop: 6 }}>Password</div>
@@ -349,7 +283,6 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 type="password"
                 placeholder="••••••••"
-                autoComplete="current-password"
               />
 
               <div className="btnRow">
@@ -361,7 +294,6 @@ export default function LoginPage() {
                 >
                   Log in
                 </button>
-
                 <button
                   onClick={signUp}
                   disabled={!canSubmit}
@@ -371,13 +303,12 @@ export default function LoginPage() {
                   Sign up
                 </button>
               </div>
-
-              
             </div>
           </div>
         </div>
 
-      
+        <div className="footer">© 2026 YourSite</div>
+      </div>
     </main>
   );
 }
