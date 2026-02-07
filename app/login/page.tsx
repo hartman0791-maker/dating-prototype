@@ -42,11 +42,43 @@ const HERO_ILLUSTRATION =
   </svg>
 `);
 
-// Put these two images in /public:
-//   /public/login-couple.jpg
-//   /public/login-city.jpg
-const PHOTO_COUPLE = "/login-couple.jpg";
-const PHOTO_CITY = "/login-city.jpg";
+/**
+ * Replace this with your own image URL if you have one:
+ * - Put an image in /public (e.g. /public/login.jpg)
+ * - Then set: const PHOTO_URL = "/login.jpg";
+ *
+ * This default is an inline SVG "photo" placeholder so it always works.
+ */
+const PHOTO_URL =
+  "data:image/svg+xml;charset=utf-8," +
+  encodeURIComponent(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900">
+    <defs>
+      <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#0f172a"/>
+        <stop offset="60%" stop-color="#111827"/>
+        <stop offset="100%" stop-color="#0b1220"/>
+      </linearGradient>
+      <radialGradient id="r" cx="35%" cy="30%" r="60%">
+        <stop offset="0%" stop-color="rgba(255,255,255,0.18)"/>
+        <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+      </radialGradient>
+    </defs>
+    <rect width="1200" height="900" fill="url(#g)"/>
+    <rect width="1200" height="900" fill="url(#r)"/>
+    <g opacity="0.20">
+      <circle cx="920" cy="260" r="160" fill="white"/>
+      <circle cx="1020" cy="340" r="120" fill="white"/>
+      <circle cx="860" cy="360" r="120" fill="white"/>
+    </g>
+    <g opacity="0.22">
+      <path d="M610 360c-58-88-200-30-200 72 0 110 200 216 200 216s200-106 200-216c0-102-142-160-200-72z" fill="white"/>
+    </g>
+    <text x="54" y="810" fill="rgba(255,255,255,0.70)" font-size="44" font-family="system-ui,Segoe UI,Roboto,Arial" font-weight="700">
+      Find your match
+    </text>
+  </svg>
+`);
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -161,49 +193,22 @@ export default function LoginPage() {
           min-height: 260px;
           background: #0b1220;
         }
-
         .photoImg{
           position:absolute;
           inset:0;
           width:100%;
           height:100%;
           object-fit:cover;
-          transition: opacity 2.2s ease-in-out;
-          filter: saturate(1.05) contrast(1.05);
           transform: scale(1.02);
+          filter: saturate(1.05) contrast(1.02);
         }
-
-        /* Start with city visible */
-        .photoImg.city{ opacity:1; }
-        .photoImg.couple{ opacity:0; }
-
-        /* Desktop hover cross-fade */
-        .photo:hover .photoImg.city{ opacity:0; }
-        .photo:hover .photoImg.couple{ opacity:1; }
-
-        /* Mobile auto cross-fade */
-        @media (hover: none){
-          .photoImg.city{ animation: fadeCity 10s infinite; }
-          .photoImg.couple{ animation: fadeCouple 10s infinite; }
-        }
-
-        @keyframes fadeCity{
-          0%,45%{ opacity:1; }
-          55%,100%{ opacity:0; }
-        }
-        @keyframes fadeCouple{
-          0%,45%{ opacity:0; }
-          55%,100%{ opacity:1; }
-        }
-
         .photoVeil{
           position:absolute;
           inset:0;
           background:
             radial-gradient(900px 520px at 10% 10%, rgba(255,255,255,.12), transparent 60%),
-            linear-gradient(180deg, rgba(0,0,0,.10), rgba(0,0,0,.58));
+            linear-gradient(180deg, rgba(0,0,0,.12), rgba(0,0,0,.55));
         }
-
         .photoText{
           position:absolute;
           left:18px;
@@ -221,7 +226,7 @@ export default function LoginPage() {
         .photoText .small{
           margin-top:6px;
           font-size:13px;
-          opacity:.90;
+          opacity:.88;
         }
 
         .hero{
@@ -359,14 +364,13 @@ export default function LoginPage() {
         <p className="topLine">A simple prototype login for your dating app.</p>
 
         <div className="shell">
-          {/* LEFT: City + Couple photo cross-fade panel */}
+          {/* LEFT: Photo panel (elegant + premium feel) */}
           <section className="photo" aria-label="Photo panel">
-            <img className="photoImg city" src={PHOTO_CITY} alt="City nightlife" />
-            <img className="photoImg couple" src={PHOTO_COUPLE} alt="Happy couple" />
+            <img className="photoImg" src={PHOTO_URL} alt="Dating app hero" />
             <div className="photoVeil" />
             <div className="photoText">
-              <p className="big">Meet someone tonight</p>
-              <div className="small">City vibes • Real matches • Better chats</div>
+              <p className="big">Meet people who match your vibe</p>
+              <div className="small">Swipe. Match. Chat. It starts here.</div>
             </div>
           </section>
 
@@ -443,11 +447,6 @@ export default function LoginPage() {
         </div>
 
         <div className="footer">© 2026 YourSite</div>
-      </div>
-    </main>
-  );
-}
-
       </div>
     </main>
   );
