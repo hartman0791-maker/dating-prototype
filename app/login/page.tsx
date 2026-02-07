@@ -300,7 +300,7 @@ export default function LoginPage() {
       <div className="wrap">
        
         <p className="topDisclosure">
-          Many companies featured here may advertise with us.{" "}
+      
           <a href="#" aria-label="Learn more">Learn more</a>
         </p>
 
