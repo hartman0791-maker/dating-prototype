@@ -387,8 +387,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <div className="footer">© 2026 YourSite. Privacy • Terms • Do Not Sell/Share</div>
-      </div>
+      
     </main>
   );
 }
