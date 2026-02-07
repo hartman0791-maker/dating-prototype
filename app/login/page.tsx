@@ -373,16 +373,7 @@ export default function LoginPage() {
                 </button>
               </div>
 
-              <div className="consent">
-                By continuing, you agree to our <a href="#">Privacy Notice</a> and{" "}
-                <a href="#">Terms of Use</a>.
-              </div>
-
-              <div className="secondaryLink">
-                <a href="/discover" onClick={(e) => { e.preventDefault(); window.location.href = "/discover"; }}>
-                  No thanks, continue
-                </a>
-              </div>
+              
             </div>
           </div>
         </div>
