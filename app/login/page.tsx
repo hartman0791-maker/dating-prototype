@@ -301,8 +301,7 @@ export default function LoginPage() {
        
         <p className="topDisclosure">
       
-          <a href="#" aria-label="Learn more">Learn more</a>
-        </p>
+           </p>
 
         <div className="card">
           {/* Hero header */}
