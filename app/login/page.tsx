@@ -1,10 +1,9 @@
 "use client";
-export {};
 
-import { useEffect, useMemo, useState } from "react";
-import { supabase } from "../../lib/supabaseClient";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { supabase } from "../../lib/supabaseClient"; // <-- adjust path if needed
 
-const softBtn: React.CSSProperties = {
+const softBtn: CSSProperties = {
   border: "none",
   borderRadius: 14,
   padding: "12px 14px",
@@ -62,10 +61,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
 
-  const canSubmit = useMemo(
-    () => email.trim().length > 3 && password.trim().length >= 6,
-    [email, password]
-  );
+  const canSubmit = useMemo(() => email.trim().length > 3 && password.trim().length >= 6, [email, password]);
 
   useEffect(() => {
     (async () => {
@@ -97,13 +93,8 @@ export default function LoginPage() {
   return (
     <main style={{ padding: 20 }}>
       <style>{`
-        .hero {
-          animation: heroPop 700ms cubic-bezier(.2,.9,.2,1) both;
-        }
-        .heroTitle {
-          animation: heroFade 900ms ease both;
-          animation-delay: 120ms;
-        }
+        .hero { animation: heroPop 700ms cubic-bezier(.2,.9,.2,1) both; }
+        .heroTitle { animation: heroFade 900ms ease both; animation-delay: 120ms; }
         @keyframes heroPop {
           from { transform: translateY(10px) scale(0.98); opacity: 0; }
           to   { transform: translateY(0) scale(1); opacity: 1; }
@@ -115,7 +106,7 @@ export default function LoginPage() {
       `}</style>
 
       <div className="app-container" style={{ maxWidth: 420 }}>
-        {/* HERO with picture + logo */}
+        {/* HERO */}
         <div
           className="hero"
           style={{
@@ -129,7 +120,6 @@ export default function LoginPage() {
             backgroundPosition: "center",
           }}
         >
-          {/* overlay for readability */}
           <div
             style={{
               position: "absolute",
@@ -139,7 +129,6 @@ export default function LoginPage() {
           />
 
           <div className="heroTitle" style={{ position: "absolute", left: 16, right: 16, bottom: 16, color: "white" }}>
-            {/* Logo + title */}
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div
                 style={{
@@ -164,12 +153,8 @@ export default function LoginPage() {
               </div>
 
               <div>
-                <div style={{ fontSize: 22, fontWeight: 950, letterSpacing: -0.3 }}>
-                  Modern & Catchy Dating
-                </div>
-                <div style={{ marginTop: 4, fontSize: 13, opacity: 0.92 }}>
-                  Match • Chat • Connect
-                </div>
+                <div style={{ fontSize: 22, fontWeight: 950, letterSpacing: -0.3 }}>Modern & Catchy Dating</div>
+                <div style={{ marginTop: 4, fontSize: 13, opacity: 0.92 }}>Match • Chat • Connect</div>
               </div>
             </div>
           </div>
@@ -211,7 +196,8 @@ export default function LoginPage() {
             >
               Sign up
             </button>
-         
+          </div>
+        </div>
       </div>
     </main>
   );
