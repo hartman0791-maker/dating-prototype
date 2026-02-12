@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { supabase } from "../../lib/supabaseClient"; // <-- adjust path if needed
+import { supabase } from "@/lib/supabaseClient";
 
 const softBtn: CSSProperties = {
   border: "none",
@@ -42,17 +42,6 @@ const HERO_ILLUSTRATION =
     <g opacity="0.22">
       <path d="M780 365c-70-105-240-35-240 85 0 130 240 255 240 255s240-125 240-255c0-120-170-190-240-85z" fill="white"/>
     </g>
-    <g opacity="0.28">
-      <circle cx="200" cy="180" r="6" fill="white"/>
-      <circle cx="260" cy="220" r="5" fill="white"/>
-      <circle cx="320" cy="160" r="4" fill="white"/>
-      <circle cx="380" cy="240" r="6" fill="white"/>
-      <circle cx="460" cy="190" r="5" fill="white"/>
-      <circle cx="520" cy="250" r="4" fill="white"/>
-      <circle cx="600" cy="200" r="6" fill="white"/>
-      <circle cx="680" cy="260" r="5" fill="white"/>
-      <circle cx="740" cy="210" r="4" fill="white"/>
-    </g>
   </svg>
 `);
 
@@ -61,7 +50,10 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
 
-  const canSubmit = useMemo(() => email.trim().length > 3 && password.trim().length >= 6, [email, password]);
+  const canSubmit = useMemo(
+    () => email.trim().length > 3 && password.trim().length >= 6,
+    [email, password]
+  );
 
   useEffect(() => {
     (async () => {
@@ -92,21 +84,24 @@ export default function LoginPage() {
 
   return (
     <main style={{ padding: 20 }}>
-      <style>{`
-        .hero { animation: heroPop 700ms cubic-bezier(.2,.9,.2,1) both; }
-        .heroTitle { animation: heroFade 900ms ease both; animation-delay: 120ms; }
-        @keyframes heroPop {
-          from { transform: translateY(10px) scale(0.98); opacity: 0; }
-          to   { transform: translateY(0) scale(1); opacity: 1; }
-        }
-        @keyframes heroFade {
-          from { transform: translateY(6px); opacity: 0; }
-          to   { transform: translateY(0); opacity: 1; }
-        }
-      `}</style>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            .hero { animation: heroPop 700ms cubic-bezier(.2,.9,.2,1) both; }
+            .heroTitle { animation: heroFade 900ms ease both; animation-delay: 120ms; }
+            @keyframes heroPop {
+              from { transform: translateY(10px) scale(0.98); opacity: 0; }
+              to   { transform: translateY(0) scale(1); opacity: 1; }
+            }
+            @keyframes heroFade {
+              from { transform: translateY(6px); opacity: 0; }
+              to   { transform: translateY(0); opacity: 1; }
+            }
+          `,
+        }}
+      />
 
-      <div className="app-container" style={{ maxWidth: 420 }}>
-        {/* HERO */}
+      <div style={{ maxWidth: 420 }}>
         <div
           className="hero"
           style={{
@@ -124,11 +119,15 @@ export default function LoginPage() {
             style={{
               position: "absolute",
               inset: 0,
-              background: "linear-gradient(180deg, rgba(0,0,0,0.08) 0%, rgba(0,0,0,0.35) 100%)",
+              background:
+                "linear-gradient(180deg, rgba(0,0,0,0.08) 0%, rgba(0,0,0,0.35) 100%)",
             }}
           />
 
-          <div className="heroTitle" style={{ position: "absolute", left: 16, right: 16, bottom: 16, color: "white" }}>
+          <div
+            className="heroTitle"
+            style={{ position: "absolute", left: 16, right: 16, bottom: 16, color: "white" }}
+          >
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div
                 style={{
@@ -153,8 +152,12 @@ export default function LoginPage() {
               </div>
 
               <div>
-                <div style={{ fontSize: 22, fontWeight: 950, letterSpacing: -0.3 }}>Modern & Catchy Dating</div>
-                <div style={{ marginTop: 4, fontSize: 13, opacity: 0.92 }}>Match • Chat • Connect</div>
+                <div style={{ fontSize: 22, fontWeight: 950, letterSpacing: -0.3 }}>
+                  Modern & Catchy Dating
+                </div>
+                <div style={{ marginTop: 4, fontSize: 13, opacity: 0.92 }}>
+                  Match • Chat • Connect
+                </div>
               </div>
             </div>
           </div>
@@ -182,7 +185,6 @@ export default function LoginPage() {
             <button
               onClick={logIn}
               disabled={!canSubmit}
-              className="btn btn-warm"
               style={{ ...softBtn, flex: 1, opacity: canSubmit ? 1 : 0.6 }}
             >
               Log in
@@ -191,7 +193,6 @@ export default function LoginPage() {
             <button
               onClick={signUp}
               disabled={!canSubmit}
-              className="btn btn-soft"
               style={{ ...softBtn, flex: 1, opacity: canSubmit ? 1 : 0.6 }}
             >
               Sign up
