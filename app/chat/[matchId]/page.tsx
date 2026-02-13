@@ -23,12 +23,12 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto scroll
+  // Auto scroll when messages update
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Get session
+  // Get session on mount
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
@@ -67,10 +67,12 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       last_read_at: new Date().toISOString(),
     });
 
-    if (error) console.log("markRead error:", error.message);
+    if (error) {
+      console.log("markRead error:", error.message);
+    }
   }
 
-  // Load messages + mark read
+  // Load messages and mark as read
   useEffect(() => {
     if (!userId) return;
 
@@ -156,6 +158,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       >
         {messages.map((m) => {
           const mine = m.sender_id === userId;
+
           return (
             <div
               key={m.id}
@@ -179,12 +182,20 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       </div>
 
       {/* Input */}
-      <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 10,
+          marginTop: 12,
+        }}
+      >
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Type a message…"
-          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") sendMessage();
+          }}
         />
         <button className="btn btn-warm" onClick={sendMessage}>
           Send
@@ -193,4 +204,3 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     </main>
   );
 }
-
