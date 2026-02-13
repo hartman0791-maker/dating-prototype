@@ -1,58 +1,18 @@
 "use client";
+export {};
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-
-const softBtn: CSSProperties = {
-  border: "none",
-  borderRadius: 14,
-  padding: "12px 14px",
-  cursor: "pointer",
-  fontWeight: 850,
-  fontFamily: "inherit",
-};
-
-const HERO_ILLUSTRATION =
-  "data:image/svg+xml;charset=utf-8," +
-  encodeURIComponent(`
-  <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900">
-    <defs>
-      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#ff4d79"/>
-        <stop offset="55%" stop-color="#ff7d54"/>
-        <stop offset="100%" stop-color="#ff9a3c"/>
-      </linearGradient>
-      <radialGradient id="glow" cx="30%" cy="25%" r="65%">
-        <stop offset="0%" stop-color="rgba(255,255,255,0.55)"/>
-        <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
-      </radialGradient>
-    </defs>
-    <rect width="1600" height="900" fill="url(#bg)"/>
-    <rect width="1600" height="900" fill="url(#glow)"/>
-    <g opacity="0.20">
-      <circle cx="1250" cy="260" r="160" fill="white"/>
-      <circle cx="1320" cy="330" r="110" fill="white"/>
-      <circle cx="1170" cy="340" r="120" fill="white"/>
-    </g>
-    <g opacity="0.18">
-      <circle cx="420" cy="640" r="220" fill="white"/>
-      <circle cx="560" cy="700" r="160" fill="white"/>
-      <circle cx="300" cy="720" r="170" fill="white"/>
-    </g>
-    <g opacity="0.22">
-      <path d="M780 365c-70-105-240-35-240 85 0 130 240 255 240 255s240-125 240-255c0-120-170-190-240-85z" fill="white"/>
-    </g>
-  </svg>
-`);
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const canSubmit = useMemo(
-    () => email.trim().length > 3 && password.trim().length >= 6,
-    [email, password]
+    () => email.trim().length > 3 && password.trim().length >= 6 && !loading,
+    [email, password, loading]
   );
 
   useEffect(() => {
@@ -63,140 +23,274 @@ export default function LoginPage() {
   }, []);
 
   async function signUp() {
+    if (!canSubmit) return;
+    setLoading(true);
     setStatus("Creating account...");
-    const { error } = await supabase.auth.signUp({
+
+    const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password: password.trim(),
     });
+
+    setLoading(false);
+
     if (error) return setStatus(`Error: ${error.message}`);
-    setStatus("Account created ✅ Now press Log in.");
+
+    // If email confirmation is enabled, session may be null
+    if (!data.session) {
+      setStatus("Account created ✅ Check your email to confirm, then log in.");
+      return;
+    }
+
+    setStatus("Account created ✅ Redirecting...");
+    window.location.href = "/discover";
   }
 
   async function logIn() {
+    if (!canSubmit) return;
+    setLoading(true);
     setStatus("Logging in...");
+
     const { error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password: password.trim(),
     });
+
+    setLoading(false);
+
     if (error) return setStatus(`Error: ${error.message}`);
     window.location.href = "/discover";
   }
 
   return (
-    <main style={{ padding: 20 }}>
+    <main className="romantic-bg">
       <style
         dangerouslySetInnerHTML={{
           __html: `
-            .hero { animation: heroPop 700ms cubic-bezier(.2,.9,.2,1) both; }
-            .heroTitle { animation: heroFade 900ms ease both; animation-delay: 120ms; }
-            @keyframes heroPop {
-              from { transform: translateY(10px) scale(0.98); opacity: 0; }
-              to   { transform: translateY(0) scale(1); opacity: 1; }
+            .romantic-bg{
+              min-height: 100vh;
+              padding: 20px;
+              display:flex;
+              align-items:center;
+              justify-content:center;
+              background: radial-gradient(circle at 30% 20%, #ffd6e7 0%, #ffe9f2 28%, #fff1e6 55%, #fff8fb 100%);
+              position: relative;
+              overflow:hidden;
+              animation: bgShift 10s ease-in-out infinite alternate;
             }
-            @keyframes heroFade {
-              from { transform: translateY(6px); opacity: 0; }
-              to   { transform: translateY(0); opacity: 1; }
+            @keyframes bgShift{
+              0%   { filter: hue-rotate(0deg) saturate(1.02); transform: translateZ(0); }
+              100% { filter: hue-rotate(-8deg) saturate(1.06); transform: translateZ(0); }
+            }
+
+            .hearts{
+              position:absolute;
+              inset:0;
+              pointer-events:none;
+              opacity: 0.55;
+              filter: blur(0.2px);
+            }
+            .heart{
+              position:absolute;
+              width: 18px;
+              height: 18px;
+              transform: rotate(45deg);
+              background: rgba(255, 77, 121, 0.18);
+              box-shadow: 0 10px 35px rgba(255, 77, 121, 0.25);
+              border-radius: 4px;
+              animation: floatUp linear infinite;
+            }
+            .heart:before,
+            .heart:after{
+              content:"";
+              position:absolute;
+              width: 18px;
+              height: 18px;
+              background: rgba(255, 77, 121, 0.18);
+              border-radius: 50%;
+            }
+            .heart:before{ left:-9px; top:0; }
+            .heart:after{ top:-9px; left:0; }
+
+            @keyframes floatUp{
+              0%{
+                transform: translateY(20vh) rotate(45deg) scale(0.95);
+                opacity: 0;
+              }
+              15%{ opacity: 0.9; }
+              100%{
+                transform: translateY(-120vh) rotate(45deg) scale(1.25);
+                opacity: 0;
+              }
+            }
+
+            .card{
+              width: 100%;
+              max-width: 460px;
+              border-radius: 28px;
+              padding: 26px;
+              background: rgba(255,255,255,0.84);
+              backdrop-filter: blur(14px);
+              border: 1px solid rgba(255,255,255,0.65);
+              box-shadow: 0 22px 60px rgba(255, 77, 121, 0.18);
+              animation: romanticIn 800ms cubic-bezier(.2,.9,.2,1) both;
+            }
+            @keyframes romanticIn{
+              from{ transform: translateY(14px) scale(0.98); opacity: 0; }
+              to  { transform: translateY(0) scale(1); opacity: 1; }
+            }
+
+            .brandRow{ display:flex; align-items:center; gap: 12px; margin-bottom: 12px; }
+            .logo{
+              width: 44px; height: 44px; border-radius: 16px;
+              display:grid; place-items:center;
+              background: linear-gradient(135deg, #ff4d79, #ff9a3c);
+              box-shadow: 0 14px 26px rgba(255, 77, 121, 0.22);
+            }
+            .title{ font-size: 22px; font-weight: 950; letter-spacing: -0.3px; margin: 0; color: #1f2937; }
+            .subtitle{ margin: 4px 0 0 0; font-size: 13px; color: rgba(31,41,55,0.70); font-weight: 700; }
+
+            .label{ font-size: 13px; font-weight: 900; color: rgba(31,41,55,0.82); margin-top: 10px; }
+            .input{
+              width: 100%;
+              margin-top: 8px;
+              padding: 12px 14px;
+              border-radius: 16px;
+              border: 1px solid rgba(0,0,0,0.10);
+              background: rgba(255,255,255,0.92);
+              outline: none;
+              font-weight: 800;
+              transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+            }
+            .input:focus{
+              border-color: rgba(255, 77, 121, 0.45);
+              box-shadow: 0 0 0 5px rgba(255, 77, 121, 0.12);
+              transform: translateY(-1px);
+            }
+
+            .btnRow{ display:flex; gap: 10px; margin-top: 16px; }
+            .btn{
+              flex: 1;
+              border: none;
+              border-radius: 16px;
+              padding: 12px 14px;
+              cursor: pointer;
+              font-weight: 950;
+              letter-spacing: -0.2px;
+              transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+            }
+            .btn:active{ transform: translateY(1px); }
+            .btnPrimary{
+              color: white;
+              background: linear-gradient(135deg, #ff4d79, #ff9a3c);
+              box-shadow: 0 16px 30px rgba(255, 77, 121, 0.22);
+            }
+            .btnSecondary{
+              color: rgba(31,41,55,0.88);
+              background: rgba(255,255,255,0.95);
+              border: 1px solid rgba(0,0,0,0.08);
+              box-shadow: 0 10px 22px rgba(0,0,0,0.06);
+            }
+            .btnDisabled{ opacity: 0.55; cursor: not-allowed; }
+
+            .status{
+              margin-top: 14px;
+              padding: 12px;
+              border-radius: 16px;
+              background: rgba(255, 244, 235, 0.92);
+              border: 1px solid rgba(255, 77, 121, 0.18);
+              font-weight: 800;
+              color: rgba(31,41,55,0.84);
+            }
+
+            .finePrint{
+              margin-top: 14px;
+              font-size: 12px;
+              color: rgba(31,41,55,0.62);
+              font-weight: 700;
+              line-height: 1.35;
             }
           `,
         }}
       />
 
-      <div style={{ maxWidth: 420 }}>
-        <div
-          className="hero"
-          style={{
-            height: 210,
-            borderRadius: 22,
-            position: "relative",
-            overflow: "hidden",
-            boxShadow: "0 18px 40px rgba(0,0,0,0.14)",
-            backgroundImage: `url(${HERO_ILLUSTRATION})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              background:
-                "linear-gradient(180deg, rgba(0,0,0,0.08) 0%, rgba(0,0,0,0.35) 100%)",
+      <div className="hearts" aria-hidden="true">
+        <div className="heart" style={{ left: "10%", animationDuration: "9s", animationDelay: "0s" }} />
+        <div className="heart" style={{ left: "22%", animationDuration: "11s", animationDelay: "-2s" }} />
+        <div className="heart" style={{ left: "36%", animationDuration: "10s", animationDelay: "-5s" }} />
+        <div className="heart" style={{ left: "52%", animationDuration: "12s", animationDelay: "-3s" }} />
+        <div className="heart" style={{ left: "68%", animationDuration: "9.5s", animationDelay: "-6s" }} />
+        <div className="heart" style={{ left: "82%", animationDuration: "11.5s", animationDelay: "-1s" }} />
+      </div>
+
+      <div className="card">
+        <div className="brandRow">
+          <div className="logo" aria-label="Logo">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M12 21s-7-4.5-9.5-9C.2 8.6 2.3 5 6.4 5c2 0 3.4 1 4.6 2.4C12.2 6 13.6 5 15.6 5c4.1 0 6.2 3.6 3.9 7-2.5 4.5-9.5 9-9.5 9z"
+                fill="white"
+                opacity="0.95"
+              />
+            </svg>
+          </div>
+          <div>
+            <h1 className="title">Modern & Catchy Dating</h1>
+            <p className="subtitle">Match • Chat • Connect</p>
+          </div>
+        </div>
+
+        <p style={{ margin: "6px 0 0 0", fontWeight: 850, color: "rgba(31,41,55,0.78)" }}>
+          Welcome back 💕 Log in or create an account to start swiping.
+        </p>
+
+        {status && <div className="status">{status}</div>}
+
+        <div style={{ marginTop: 14 }}>
+          <div className="label">Email</div>
+          <input
+            className="input"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@email.com"
+            autoComplete="email"
+            aria-label="Email"
+          />
+
+          <div className="label">Password</div>
+          <input
+            className="input"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            type="password"
+            placeholder="••••••••"
+            autoComplete="current-password"
+            aria-label="Password"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && canSubmit) logIn();
             }}
           />
 
-          <div
-            className="heroTitle"
-            style={{ position: "absolute", left: 16, right: 16, bottom: 16, color: "white" }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 14,
-                  background: "rgba(255,255,255,0.22)",
-                  border: "1px solid rgba(255,255,255,0.25)",
-                  display: "grid",
-                  placeItems: "center",
-                  backdropFilter: "blur(6px)",
-                }}
-                aria-label="Logo"
-              >
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                  <path
-                    d="M12 21s-7-4.5-9.5-9C.2 8.6 2.3 5 6.4 5c2 0 3.4 1 4.6 2.4C12.2 6 13.6 5 15.6 5c4.1 0 6.2 3.6 3.9 7-2.5 4.5-9.5 9-9.5 9z"
-                    fill="white"
-                    opacity="0.95"
-                  />
-                </svg>
-              </div>
-
-              <div>
-                <div style={{ fontSize: 22, fontWeight: 950, letterSpacing: -0.3 }}>
-                  Modern & Catchy Dating
-                </div>
-                <div style={{ marginTop: 4, fontSize: 13, opacity: 0.92 }}>
-                  Match • Chat • Connect
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 16 }}>
-          <h2 style={{ margin: "0 0 6px 0" }}>Welcome</h2>
-          <p style={{ margin: 0, opacity: 0.85 }}>Log in or create an account to start swiping.</p>
-        </div>
-
-        {status && (
-          <div style={{ marginTop: 14, padding: 12, borderRadius: 14, background: "rgba(255, 244, 235, 0.85)" }}>
-            {status}
-          </div>
-        )}
-
-        <div style={{ marginTop: 16, display: "grid", gap: 10 }}>
-          <label style={{ fontSize: 13, fontWeight: 850, opacity: 0.9 }}>Email</label>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@email.com" />
-
-          <label style={{ fontSize: 13, fontWeight: 850, opacity: 0.9, marginTop: 6 }}>Password</label>
-          <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="••••••••" />
-
-          <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+          <div className="btnRow">
             <button
               onClick={logIn}
               disabled={!canSubmit}
-              style={{ ...softBtn, flex: 1, opacity: canSubmit ? 1 : 0.6 }}
+              className={`btn btnPrimary ${!canSubmit ? "btnDisabled" : ""}`}
             >
-              Log in
+              {loading ? "Logging in..." : "Log in"}
             </button>
 
             <button
               onClick={signUp}
               disabled={!canSubmit}
-              style={{ ...softBtn, flex: 1, opacity: canSubmit ? 1 : 0.6 }}
+              className={`btn btnSecondary ${!canSubmit ? "btnDisabled" : ""}`}
             >
-              Sign up
+              {loading ? "Creating..." : "Sign up"}
             </button>
+          </div>
+
+          <div className="finePrint">
+            By continuing, you agree to be respectful and kind. You can block/report anyone at any time.
           </div>
         </div>
       </div>
