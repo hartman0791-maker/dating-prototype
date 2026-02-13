@@ -23,10 +23,12 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
+  // Auto scroll
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Get session
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
@@ -68,6 +70,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     if (error) console.log("markRead error:", error.message);
   }
 
+  // Load messages + mark read
   useEffect(() => {
     if (!userId) return;
 
@@ -111,7 +114,10 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
         title="Chat"
         right={
           <>
-            <button className="btn btn-gray" onClick={() => (window.location.href = "/matches")}>
+            <button
+              className="btn btn-gray"
+              onClick={() => (window.location.href = "/matches")}
+            >
               ← Matches
             </button>
             <button className="btn btn-gray" onClick={logout}>
@@ -134,6 +140,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
         </div>
       )}
 
+      {/* Messages */}
       <div
         style={{
           display: "flex",
@@ -171,6 +178,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
         <div ref={bottomRef} />
       </div>
 
+      {/* Input */}
       <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
         <input
           value={text}
@@ -185,3 +193,4 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     </main>
   );
 }
+
