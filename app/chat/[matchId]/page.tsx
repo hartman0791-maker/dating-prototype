@@ -1,7 +1,7 @@
 "use client";
 export {};
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import AppHeader from "../../../components/AppHeader";
 
@@ -41,8 +41,28 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
   }, []);
 
   // Load messages
-  useEffect(() => {
-    if (!userId) return;
+useEffect(() => {
+  if (!userId) return;
+
+  (async () => {
+    await loadMessages();
+    await markRead();
+  })();
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [userId]);
+
+  const { error } = await supabase.from("message_reads").upsert({
+    match_id: matchId,
+    user_id: userId,
+    last_read_at: new Date().toISOString(),
+  });
+
+  if (error) {
+    console.log("markRead error:", error.message);
+  }
+}
+
     loadMessages();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
