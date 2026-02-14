@@ -1,4 +1,4 @@
-
+alter publication supabase_realtime add table public.typing_status;
 "use client";
 export {};
 
@@ -14,6 +14,13 @@ type Message = {
   created_at: string;
 };
 
+type TypingRow = {
+  match_id: string;
+  user_id: string;
+  is_typing: boolean;
+  updated_at: string;
+};
+
 export default function ChatPage({ params }: { params: { matchId: string } }) {
   const matchId = params.matchId;
 
@@ -21,6 +28,10 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
   const [status, setStatus] = useState("");
+
+  // ✅ Typing indicator
+  const [otherTyping, setOtherTyping] = useState(false);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const loadedOnceRef = useRef(false);
@@ -75,6 +86,37 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     if (error) console.log("markRead error:", error.message);
   }
 
+  // ✅ Typing: write my typing_status row
+  async function setTyping(isTyping: boolean) {
+    if (!userId) return;
+
+    const { error } = await supabase.from("typing_status").upsert(
+      {
+        match_id: matchId,
+        user_id: userId,
+        is_typing: isTyping,
+      },
+      { onConflict: "match_id,user_id" }
+    );
+
+    if (error) console.log("setTyping error:", error.message);
+  }
+
+  // ✅ Typing: handle local text changes + debounce stop-typing
+  function handleTypingChange(next: string) {
+    setText(next);
+
+    // Mark typing true immediately
+    setTyping(true);
+
+    // Debounce: after 1200ms idle -> set false
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      setTyping(false);
+      typingTimeoutRef.current = null;
+    }, 1200);
+  }
+
   // Load messages once and mark as read
   useEffect(() => {
     if (!userId) return;
@@ -103,8 +145,6 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
           filter: `match_id=eq.${matchId}`,
         },
         (payload) => {
-          console.log("realtime INSERT payload:", payload);
-
           const m = payload.new as Message;
 
           // Avoid dupes + keep sorted
@@ -131,11 +171,58 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     };
   }, [userId, matchId]);
 
+  // ✅ Realtime: listen for typing_status changes for this match
+  useEffect(() => {
+    if (!userId) return;
+
+    const channel = supabase
+      .channel(`typing:${matchId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "typing_status",
+          filter: `match_id=eq.${matchId}`,
+        },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as TypingRow | null;
+          if (!row) return;
+
+          // Ignore my own row
+          if (row.user_id === userId) return;
+
+          setOtherTyping(Boolean(row.is_typing));
+        }
+      )
+      .subscribe((s) => console.log("typing realtime status:", s));
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, matchId]);
+
+  // ✅ On unmount, clear my typing (prevents "stuck typing" if user navigates away)
+  useEffect(() => {
+    return () => {
+      // best-effort
+      setTyping(false);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, matchId]);
+
   async function sendMessage() {
     if (!text.trim() || !userId) return;
 
     const body = text.trim();
+
+    // Clear input immediately
     setText("");
+
+    // Stop typing immediately
+    await setTyping(false);
 
     const { error } = await supabase.from("messages").insert({
       match_id: matchId,
@@ -189,6 +276,13 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
         </div>
       )}
 
+      {/* ✅ Typing indicator */}
+      {otherTyping && (
+        <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>
+          Typing…
+        </div>
+      )}
+
       {/* Messages */}
       <div
         style={{
@@ -232,7 +326,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
         <input
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => handleTypingChange(e.target.value)}
           placeholder="Type a message…"
           onKeyDown={(e) => {
             if (e.key === "Enter") sendMessage();
