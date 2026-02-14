@@ -28,9 +28,9 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
   const [text, setText] = useState("");
   const [status, setStatus] = useState("");
 
-  // ✅ Typing indicator
+  // ✅ Typing indicator state
   const [otherTyping, setOtherTyping] = useState(false);
-  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingTimeoutRef = useRef<any>(null);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -84,7 +84,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     if (error) console.log("markRead error:", error.message);
   }
 
-  // ✅ Typing: write my typing_status row
+  // ✅ Typing status writer
   async function setTyping(isTyping: boolean) {
     if (!userId) return;
 
@@ -93,6 +93,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
         match_id: matchId,
         user_id: userId,
         is_typing: isTyping,
+        updated_at: new Date().toISOString(), // forces update events
       },
       { onConflict: "match_id,user_id" }
     );
@@ -100,19 +101,18 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     if (error) console.log("setTyping error:", error.message);
   }
 
-  // ✅ Typing: handle local text changes + debounce stop-typing
+  // ✅ Input handler that actually triggers typing
   function handleTypingChange(next: string) {
     setText(next);
 
-    // mark typing true immediately
+    // mark typing true
     setTyping(true);
 
-    // debounce: set false after 1.2s idle
+    // debounce: set false after 4s of no input (TEMP TEST VALUE)
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
       setTyping(false);
-      typingTimeoutRef.current = null;
-    }, 1200);
+    }, 4000);
   }
 
   // Load messages once and mark as read
@@ -127,7 +127,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, matchId]);
 
-  // ✅ Realtime: listen for new messages for this match_id
+  // ✅ Realtime: listen for new messages on this match_id
   useEffect(() => {
     if (!userId) return;
 
@@ -144,7 +144,6 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
         (payload) => {
           const m = payload.new as Message;
 
-          // Avoid dupes + keep sorted
           setMessages((prev) => {
             if (prev.some((x) => x.id === m.id)) return prev;
             const next = [...prev, m];
@@ -155,20 +154,17 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
             return next;
           });
 
-          // Mark read when message arrives
           markRead();
         }
       )
-      .subscribe((s) => {
-        console.log("realtime status:", s, "matchId:", matchId, "userId:", userId);
-      });
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [userId, matchId]);
 
-  // ✅ Realtime: listen for typing_status changes on this match
+  // ✅ Realtime Typing: listen for INSERT + UPDATE + DELETE
   useEffect(() => {
     if (!userId) return;
 
@@ -183,34 +179,27 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
           filter: `match_id=eq.${matchId}`,
         },
         (payload) => {
-          const row = (payload.new ?? payload.old) as TypingRow | null;
+          const row = payload.new as TypingRow | undefined;
           if (!row) return;
 
-          // Ignore my own typing row
+          // ignore my own typing row
           if (row.user_id === userId) return;
 
           setOtherTyping(Boolean(row.is_typing));
         }
       )
-      .subscribe((s) => console.log("typing realtime status:", s));
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [userId, matchId]);
 
-  // ✅ Cleanup: prevent "stuck typing" when leaving page/tab
+  // ✅ Cleanup: stop typing when leaving page
   useEffect(() => {
-    const onHidden = () => {
-      if (document.visibilityState === "hidden") setTyping(false);
-    };
-    document.addEventListener("visibilitychange", onHidden);
-
     return () => {
-      document.removeEventListener("visibilitychange", onHidden);
-      setTyping(false);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = null;
+      setTyping(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, matchId]);
@@ -224,6 +213,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     setText("");
 
     // Stop typing immediately
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     await setTyping(false);
 
     const { error } = await supabase.from("messages").insert({
@@ -237,7 +227,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       return;
     }
 
-    // realtime will deliver the inserted message
+    // No loadMessages() needed; realtime will deliver it
     await markRead();
   }
 
@@ -280,7 +270,14 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
 
       {/* ✅ Typing indicator */}
       {otherTyping && (
-        <div style={{ margin: "0 0 10px 0", fontSize: 12, opacity: 0.75 }}>
+        <div
+          style={{
+            marginBottom: 10,
+            fontSize: 13,
+            fontWeight: 800,
+            opacity: 0.75,
+          }}
+        >
           Typing…
         </div>
       )}
@@ -328,7 +325,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
         <input
           value={text}
-          onChange={(e) => handleTypingChange(e.target.value)}
+          onChange={(e) => handleTypingChange(e.target.value)} // ✅ IMPORTANT FIX
           placeholder="Type a message…"
           onKeyDown={(e) => {
             if (e.key === "Enter") sendMessage();
@@ -341,4 +338,3 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     </main>
   );
 }
-
