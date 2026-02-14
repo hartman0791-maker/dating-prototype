@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient, createAdminClient } from "@/lib/supabase/server.ts";
 
+
 /**
  * DELETE /api/delete-user
  * Deletes the currently logged-in user's profile row (if present)
