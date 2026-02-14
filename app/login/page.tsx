@@ -110,39 +110,39 @@ export default function LoginPage() {
   }
 }
 
-            /* ===== Premium glass card with animated border glow ===== */
-            .card{
-              width:100%;
-              max-width:450px;
-              padding:30px;
-              border-radius:30px;
-              background: rgba(255,255,255,0.08);
-              backdrop-filter: blur(22px);
-              border: 1px solid rgba(255,255,255,0.18);
-              box-shadow: 0 24px 80px rgba(0,0,0,0.6);
-              position:relative;
-              animation: entrance 750ms cubic-bezier(.2,.9,.2,1) both;
-            }
-            @keyframes entrance{
-              from{ opacity:0; transform: translateY(14px) scale(0.98); }
-              to{ opacity:1; transform: translateY(0) scale(1); }
-            }
+          /* ===== Premium shimmer border on hover ===== */
+.card{
+  position:relative;
+  overflow:hidden;
+}
 
-            .card::before{
-              content:"";
-              position:absolute;
-              inset:-2px;
-              border-radius:32px;
-              background: linear-gradient(135deg, rgba(99,102,241,0.7), rgba(236,72,153,0.55), rgba(255,255,255,0.08));
-              filter: blur(18px);
-              opacity:0.8;
-              z-index:-1;
-              animation: glow 4s ease-in-out infinite alternate;
-            }
-            @keyframes glow{
-              from{ opacity:0.5; transform: scale(0.98); }
-              to{ opacity:0.9; transform: scale(1.02); }
-            }
+.card::after{
+  content:"";
+  position:absolute;
+  inset:-2px;
+  border-radius:32px;
+  background: linear-gradient(
+    120deg,
+    rgba(255,255,255,0) 0%,
+    rgba(255,255,255,0.10) 35%,
+    rgba(255,255,255,0.35) 50%,
+    rgba(255,255,255,0.10) 65%,
+    rgba(255,255,255,0) 100%
+  );
+  transform: translateX(-140%);
+  opacity:0;
+  pointer-events:none;
+}
+
+.card:hover::after{
+  opacity:1;
+  animation: shimmer 1.1s ease-out;
+}
+
+@keyframes shimmer{
+  from{ transform: translateX(-140%); }
+  to{ transform: translateX(140%); }
+}
 
             /* ===== Header ===== */
             .brand{
