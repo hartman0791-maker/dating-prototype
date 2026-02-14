@@ -262,7 +262,7 @@ export default function LoginPage() {
         </div>
 
         <div className="finePrint">
-          Be kind and respectful ❤️ You can block or report anytime.
+          Be kind and respectful ❤️ You can block or report never rami.
         </div>
       </div>
     </main>
