@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server.ts";
+
 /**
  * DELETE /api/delete-user
  * Deletes the currently logged-in user's profile row (if present)
@@ -29,7 +31,7 @@ export async function DELETE() {
     return NextResponse.json({ error: profErr.message }, { status: 500 });
   }
 
-  // Delete auth user (requires secret/service role key on server)
+  // Delete auth user (requires service role key on server)
   const { error: delErr } = await admin.auth.admin.deleteUser(userId);
   if (delErr) {
     return NextResponse.json({ error: delErr.message }, { status: 500 });
