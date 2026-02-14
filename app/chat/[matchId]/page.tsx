@@ -1,4 +1,3 @@
-alter publication supabase_realtime add table public.typing_status;
 "use client";
 export {};
 
@@ -18,7 +17,7 @@ type TypingRow = {
   match_id: string;
   user_id: string;
   is_typing: boolean;
-  updated_at: string;
+  updated_at?: string;
 };
 
 export default function ChatPage({ params }: { params: { matchId: string } }) {
@@ -34,7 +33,6 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
-  const loadedOnceRef = useRef(false);
 
   // Auto scroll when messages update
   useEffect(() => {
@@ -106,10 +104,10 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
   function handleTypingChange(next: string) {
     setText(next);
 
-    // Mark typing true immediately
+    // mark typing true immediately
     setTyping(true);
 
-    // Debounce: after 1200ms idle -> set false
+    // debounce: set false after 1.2s idle
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
       setTyping(false);
@@ -124,13 +122,12 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     (async () => {
       await loadMessages();
       await markRead();
-      loadedOnceRef.current = true;
     })();
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, matchId]);
 
-  // ✅ Realtime: listen for new messages on this match_id
+  // ✅ Realtime: listen for new messages for this match_id
   useEffect(() => {
     if (!userId) return;
 
@@ -158,7 +155,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
             return next;
           });
 
-          // Mark as read when we receive a new message
+          // Mark read when message arrives
           markRead();
         }
       )
@@ -171,7 +168,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     };
   }, [userId, matchId]);
 
-  // ✅ Realtime: listen for typing_status changes for this match
+  // ✅ Realtime: listen for typing_status changes on this match
   useEffect(() => {
     if (!userId) return;
 
@@ -189,7 +186,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
           const row = (payload.new ?? payload.old) as TypingRow | null;
           if (!row) return;
 
-          // Ignore my own row
+          // Ignore my own typing row
           if (row.user_id === userId) return;
 
           setOtherTyping(Boolean(row.is_typing));
@@ -202,10 +199,15 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     };
   }, [userId, matchId]);
 
-  // ✅ On unmount, clear my typing (prevents "stuck typing" if user navigates away)
+  // ✅ Cleanup: prevent "stuck typing" when leaving page/tab
   useEffect(() => {
+    const onHidden = () => {
+      if (document.visibilityState === "hidden") setTyping(false);
+    };
+    document.addEventListener("visibilitychange", onHidden);
+
     return () => {
-      // best-effort
+      document.removeEventListener("visibilitychange", onHidden);
       setTyping(false);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = null;
@@ -235,7 +237,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       return;
     }
 
-    // ✅ No loadMessages() needed anymore (realtime will deliver it)
+    // realtime will deliver the inserted message
     await markRead();
   }
 
@@ -278,7 +280,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
 
       {/* ✅ Typing indicator */}
       {otherTyping && (
-        <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>
+        <div style={{ margin: "0 0 10px 0", fontSize: 12, opacity: 0.75 }}>
           Typing…
         </div>
       )}
@@ -339,3 +341,4 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     </main>
   );
 }
+
