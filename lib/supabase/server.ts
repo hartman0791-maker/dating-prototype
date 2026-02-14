@@ -1,3 +1,4 @@
+
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
@@ -24,10 +25,18 @@ export function createClient() {
 }
 
 export function createAdminClient() {
-  // IMPORTANT: requires SUPABASE_SERVICE_ROLE_KEY in Vercel env vars
+  // Requires SUPABASE_SERVICE_ROLE_KEY in Vercel env vars (server-side only)
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { cookies: { get() {}, set() {}, remove() {} } as any }
+    {
+      cookies: {
+        get() {
+          return undefined;
+        },
+        set() {},
+        remove() {},
+      } as any,
+    }
   );
 }
