@@ -41,185 +41,126 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="romantic-bg">
+    <main className="glass-bg">
       <style
         dangerouslySetInnerHTML={{
           __html: `
+            /* ===== Background gradient ===== */
+            .glass-bg {
+              min-height: 100vh;
+              display:flex;
+              align-items:center;
+              justify-content:center;
+              padding: 20px;
+              background: linear-gradient(135deg, #0f172a, #1e293b, #020617);
+            }
 
-      /* ===== Elegant gradient background ===== */
-      .romantic-bg{
-        min-height: 100vh;
-        padding: 20px;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        background: radial-gradient(circle at 20% 20%, #f8fafc 0%, #eef2f7 35%, #e5e7eb 65%, #f9fafb 100%);
-        position: relative;
-        overflow:hidden;
-      }
+            /* ===== Glass card ===== */
+            .card {
+              width:100%;
+              max-width:420px;
+              padding:30px;
+              border-radius:28px;
+              background: rgba(255,255,255,0.08);
+              backdrop-filter: blur(18px);
+              border:1px solid rgba(255,255,255,0.18);
+              box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+              animation: fadeIn 0.6s ease;
+            }
 
-      /* ===== Glow blobs ===== */
-      .romantic-bg::before,
-      .romantic-bg::after{
-        content:"";
-        position:absolute;
-        width: 400px;
-        height: 400px;
-        border-radius:50%;
-        filter: blur(90px);
-        opacity:0.35;
-      }
+            @keyframes fadeIn {
+              from { opacity:0; transform: translateY(10px);}
+              to { opacity:1; transform: translateY(0);}
+            }
 
-      .romantic-bg::before{
-        background:#c4b5fd;
-        top:-120px;
-        left:-120px;
-      }
+            .title {
+              font-size:26px;
+              font-weight:900;
+              color:white;
+              margin-bottom:4px;
+            }
 
-      .romantic-bg::after{
-        background:#fbcfe8;
-        bottom:-120px;
-        right:-120px;
-      }
+            .subtitle {
+              font-size:14px;
+              color:rgba(255,255,255,0.7);
+              margin-bottom:20px;
+            }
 
-      /* ===== Glass card ===== */
-      .card{
-        width: 100%;
-        max-width: 460px;
-        border-radius: 28px;
-        padding: 28px;
-        background: rgba(255,255,255,0.65);
-        backdrop-filter: blur(18px);
-        border: 1px solid rgba(255,255,255,0.4);
-        box-shadow: 0 20px 60px rgba(0,0,0,0.12);
-        animation: fadeIn 0.6s ease-out;
-      }
+            .label {
+              font-size:13px;
+              font-weight:800;
+              color:rgba(255,255,255,0.85);
+              margin-top:10px;
+            }
 
-      @keyframes fadeIn{
-        from{ opacity:0; transform: translateY(10px); }
-        to{ opacity:1; transform: translateY(0); }
-      }
+            .input {
+              width:100%;
+              padding:12px 14px;
+              margin-top:6px;
+              border-radius:14px;
+              border:1px solid rgba(255,255,255,0.2);
+              background: rgba(255,255,255,0.05);
+              color:white;
+              outline:none;
+            }
 
-      .brandRow{
-        display:flex;
-        align-items:center;
-        gap: 12px;
-        margin-bottom: 12px;
-      }
+            .input:focus {
+              border-color: rgba(99,102,241,0.8);
+              box-shadow: 0 0 0 4px rgba(99,102,241,0.2);
+            }
 
-      .logo{
-        width: 44px;
-        height: 44px;
-        border-radius: 14px;
-        display:grid;
-        place-items:center;
-        background: linear-gradient(135deg,#6366f1,#ec4899);
-        color:white;
-        font-weight:900;
-      }
+            .btnRow {
+              display:flex;
+              gap:10px;
+              margin-top:18px;
+            }
 
-      .title{
-        font-size: 24px;
-        font-weight: 900;
-        color:#111827;
-        margin:0;
-      }
+            .btn {
+              flex:1;
+              padding:12px;
+              border-radius:14px;
+              border:none;
+              font-weight:900;
+              cursor:pointer;
+              transition: all .15s ease;
+            }
 
-      .subtitle{
-        color:#6b7280;
-        font-weight:600;
-        margin:0;
-        font-size:13px;
-      }
+            .btnPrimary {
+              background: linear-gradient(135deg,#6366f1,#8b5cf6);
+              color:white;
+            }
 
-      .label{
-        font-size:13px;
-        font-weight:700;
-        margin-top:12px;
-      }
+            .btnSecondary {
+              background: rgba(255,255,255,0.12);
+              color:white;
+            }
 
-      /* ===== Inputs ===== */
-      .input{
-        width: 100%;
-        margin-top: 6px;
-        padding: 12px 14px;
-        border-radius: 14px;
-        border: 1px solid rgba(0,0,0,0.08);
-        background: rgba(255,255,255,0.8);
-        outline:none;
-        font-weight:600;
-        transition: all .2s ease;
-      }
+            .btn:hover {
+              transform: translateY(-1px);
+              opacity:0.95;
+            }
 
-      .input:focus{
-        border-color:#6366f1;
-        box-shadow: 0 0 0 4px rgba(99,102,241,0.15);
-      }
+            .btnDisabled {
+              opacity:0.4;
+              cursor:not-allowed;
+            }
 
-      .btnRow{
-        display:flex;
-        gap:10px;
-        margin-top:16px;
-      }
-
-      .btn{
-        flex:1;
-        border:none;
-        border-radius: 14px;
-        padding:12px;
-        font-weight:800;
-        cursor:pointer;
-        transition:.2s ease;
-      }
-
-      .btnPrimary{
-        color:white;
-        background: linear-gradient(135deg,#6366f1,#ec4899);
-        box-shadow: 0 10px 25px rgba(99,102,241,0.25);
-      }
-
-      .btnPrimary:hover{
-        transform: translateY(-1px);
-        box-shadow: 0 14px 30px rgba(99,102,241,0.35);
-      }
-
-      .btnSecondary{
-        background: rgba(255,255,255,0.85);
-        border:1px solid rgba(0,0,0,0.08);
-      }
-
-      .btnDisabled{
-        opacity:.5;
-        cursor:not-allowed;
-      }
-
-      .status{
-        margin-top: 14px;
-        padding: 12px;
-        border-radius: 14px;
-        background: rgba(255,255,255,0.8);
-        border:1px solid rgba(0,0,0,0.05);
-      }
-
-      .finePrint{
-        margin-top: 14px;
-        font-size:12px;
-        color:#6b7280;
-        font-weight:600;
-      }
-
-      `,
+            .status {
+              margin-top:14px;
+              padding:12px;
+              border-radius:14px;
+              background: rgba(255,255,255,0.08);
+              border:1px solid rgba(255,255,255,0.15);
+              color:white;
+              font-weight:700;
+            }
+          `,
         }}
       />
 
       <div className="card">
-        <div className="brandRow">
-          <div className="logo">❤</div>
-          <div>
-            <h1 className="title">Modern Dating</h1>
-            <p className="subtitle">Match • Chat • Connect</p>
-          </div>
-        </div>
+        <div className="title">Welcome Back</div>
+        <div className="subtitle">Log in or create an account</div>
 
         {status && <div className="status">{status}</div>}
 
@@ -234,9 +175,9 @@ export default function LoginPage() {
         <div className="label">Password</div>
         <input
           className="input"
+          type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          type="password"
           placeholder="••••••••"
           onKeyDown={(e) => {
             if (e.key === "Enter" && canSubmit) logIn();
@@ -259,10 +200,6 @@ export default function LoginPage() {
           >
             Sign up
           </button>
-        </div>
-
-        <div className="finePrint">
-          Be kind and respectful ❤️ You can block or report never rami.
         </div>
       </div>
     </main>
