@@ -1,3 +1,4 @@
+
 "use client";
 export {};
 
@@ -22,6 +23,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
   const [status, setStatus] = useState("");
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const loadedOnceRef = useRef(false);
 
   // Auto scroll when messages update
   useEffect(() => {
@@ -61,28 +63,73 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
   async function markRead() {
     if (!userId) return;
 
-    const { error } = await supabase.from("message_reads").upsert({
-      match_id: matchId,
-      user_id: userId,
-      last_read_at: new Date().toISOString(),
-    });
+    const { error } = await supabase.from("message_reads").upsert(
+      {
+        match_id: matchId,
+        user_id: userId,
+        last_read_at: new Date().toISOString(),
+      },
+      { onConflict: "match_id,user_id" }
+    );
 
-    if (error) {
-      console.log("markRead error:", error.message);
-    }
+    if (error) console.log("markRead error:", error.message);
   }
 
-  // Load messages and mark as read
+  // Load messages once and mark as read
   useEffect(() => {
     if (!userId) return;
 
     (async () => {
       await loadMessages();
       await markRead();
+      loadedOnceRef.current = true;
     })();
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
+  }, [userId, matchId]);
+
+  // ✅ Realtime: listen for new messages on this match_id
+  useEffect(() => {
+    if (!userId) return;
+
+    const channel = supabase
+      .channel(`chat:${matchId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `match_id=eq.${matchId}`,
+        },
+        (payload) => {
+          console.log("realtime INSERT payload:", payload);
+
+          const m = payload.new as Message;
+
+          // Avoid dupes + keep sorted
+          setMessages((prev) => {
+            if (prev.some((x) => x.id === m.id)) return prev;
+            const next = [...prev, m];
+            next.sort(
+              (a, b) =>
+                new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            );
+            return next;
+          });
+
+          // Mark as read when we receive a new message
+          markRead();
+        }
+      )
+      .subscribe((s) => {
+        console.log("realtime status:", s, "matchId:", matchId, "userId:", userId);
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, matchId]);
 
   async function sendMessage() {
     if (!text.trim() || !userId) return;
@@ -101,7 +148,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       return;
     }
 
-    await loadMessages();
+    // ✅ No loadMessages() needed anymore (realtime will deliver it)
     await markRead();
   }
 
@@ -182,13 +229,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       </div>
 
       {/* Input */}
-      <div
-        style={{
-          display: "flex",
-          gap: 10,
-          marginTop: 12,
-        }}
-      >
+      <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
