@@ -65,27 +65,50 @@ export default function LoginPage() {
               to { filter: hue-rotate(-10deg) saturate(1.15); }
             }
 
-            /* ===== Floating particles ===== */
-            .particles{
-              position:absolute;
-              inset:0;
-              pointer-events:none;
-              opacity:0.55;
-            }
-            .p{
-              position:absolute;
-              width:10px;
-              height:10px;
-              border-radius:999px;
-              background: rgba(255,255,255,0.10);
-              box-shadow: 0 0 22px rgba(255,255,255,0.18);
-              animation: floatUp linear infinite;
-            }
-            @keyframes floatUp{
-              0%{ transform: translateY(120vh) scale(0.6); opacity:0; }
-              15%{ opacity:1; }
-              100%{ transform: translateY(-140vh) scale(1.1); opacity:0; }
-            }
+           /* ===== Floating hearts ===== */
+.hearts{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  opacity:0.55;
+  filter: blur(0.2px);
+}
+
+.heart{
+  position:absolute;
+  width: 18px;
+  height: 18px;
+  transform: rotate(45deg);
+  background: rgba(236,72,153,0.18);
+  box-shadow: 0 10px 35px rgba(236,72,153,0.25);
+  border-radius: 4px;
+  animation: floatUp linear infinite;
+}
+
+.heart:before,
+.heart:after{
+  content:"";
+  position:absolute;
+  width: 18px;
+  height: 18px;
+  background: rgba(236,72,153,0.18);
+  border-radius: 50%;
+}
+
+.heart:before{ left:-9px; top:0; }
+.heart:after{ top:-9px; left:0; }
+
+@keyframes floatUp{
+  0%{
+    transform: translateY(120vh) rotate(45deg) scale(0.85);
+    opacity: 0;
+  }
+  15%{ opacity: 0.9; }
+  100%{
+    transform: translateY(-140vh) rotate(45deg) scale(1.25);
+    opacity: 0;
+  }
+}
 
             /* ===== Premium glass card with animated border glow ===== */
             .card{
