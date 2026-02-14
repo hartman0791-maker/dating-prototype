@@ -236,15 +236,16 @@ export default function LoginPage() {
         }}
       />
 
-      {/* Floating particles */}
-      <div className="particles" aria-hidden="true">
-        <div className="p" style={{ left: "10%", animationDuration: "11s", animationDelay: "0s" }} />
-        <div className="p" style={{ left: "25%", animationDuration: "14s", animationDelay: "-2s" }} />
-        <div className="p" style={{ left: "40%", animationDuration: "12s", animationDelay: "-6s" }} />
-        <div className="p" style={{ left: "55%", animationDuration: "16s", animationDelay: "-4s" }} />
-        <div className="p" style={{ left: "70%", animationDuration: "13s", animationDelay: "-7s" }} />
-        <div className="p" style={{ left: "85%", animationDuration: "15s", animationDelay: "-1s" }} />
-      </div>
+      {/* Floating hearts */}
+<div className="hearts" aria-hidden="true">
+  <div className="heart" style={{ left: "10%", animationDuration: "11s", animationDelay: "0s" }} />
+  <div className="heart" style={{ left: "22%", animationDuration: "14s", animationDelay: "-2s", transform: "rotate(45deg) scale(1.15)" }} />
+  <div className="heart" style={{ left: "36%", animationDuration: "12s", animationDelay: "-6s" }} />
+  <div className="heart" style={{ left: "52%", animationDuration: "16s", animationDelay: "-4s", transform: "rotate(45deg) scale(1.28)" }} />
+  <div className="heart" style={{ left: "68%", animationDuration: "13s", animationDelay: "-7s" }} />
+  <div className="heart" style={{ left: "82%", animationDuration: "15s", animationDelay: "-1s", transform: "rotate(45deg) scale(0.95)" }} />
+</div>
+
 
       <div className="card">
         <div className="brand">
