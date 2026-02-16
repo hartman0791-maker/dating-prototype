@@ -88,9 +88,10 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       return;
     }
 
+    // ✅ Change A: DO NOT clear body (your table has a check constraint)
     const nowIso = new Date().toISOString();
     setMessages((prev) =>
-      prev.map((m) => (m.id === msg.id ? { ...m, deleted_at: nowIso, body: "" } : m))
+      prev.map((m) => (m.id === msg.id ? { ...m, deleted_at: nowIso } : m))
     );
 
     setStatus("Deleted ✅");
