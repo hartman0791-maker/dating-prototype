@@ -20,6 +20,13 @@ type TypingRow = {
   updated_at?: string;
 };
 
+type MenuState = {
+  open: boolean;
+  x: number;
+  y: number;
+  msg: Message | null;
+};
+
 export default function ChatPage({ params }: { params: { matchId: string } }) {
   const matchId = params.matchId;
 
@@ -33,6 +40,97 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
   const typingTimeoutRef = useRef<any>(null);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  // ✅ Long-press / right-click menu
+  const [menu, setMenu] = useState<MenuState>({ open: false, x: 0, y: 0, msg: null });
+  const pressTimerRef = useRef<number | null>(null);
+
+  function openMenuAt(x: number, y: number, msg: Message) {
+    const maxW = typeof window !== "undefined" ? window.innerWidth : 9999;
+    const maxH = typeof window !== "undefined" ? window.innerHeight : 9999;
+
+    setMenu({
+      open: true,
+      x: Math.min(x, maxW - 240),
+      y: Math.min(y, maxH - 200),
+      msg,
+    });
+  }
+
+  function closeMenu() {
+    setMenu({ open: false, x: 0, y: 0, msg: null });
+  }
+
+  async function copyMessage(body: string) {
+    try {
+      await navigator.clipboard.writeText(body);
+      setStatus("Copied ✅");
+      window.setTimeout(() => setStatus(""), 900);
+      closeMenu();
+    } catch {
+      setStatus("Copy failed");
+      window.setTimeout(() => setStatus(""), 900);
+    }
+  }
+
+  async function deleteMessage(msg: Message) {
+    if (!userId) return;
+
+    // only allow deleting your own messages
+    if (msg.sender_id !== userId) {
+      setStatus("You can only delete your own messages.");
+      window.setTimeout(() => setStatus(""), 1200);
+      closeMenu();
+      return;
+    }
+
+    const ok = window.confirm("Delete this message?");
+    if (!ok) return;
+
+    const { error } = await supabase.from("messages").delete().eq("id", msg.id);
+    if (error) {
+      setStatus(`Delete failed: ${error.message}`);
+      return;
+    }
+
+    // Optimistic remove
+    setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+    closeMenu();
+  }
+
+  async function reportMessage(msg: Message) {
+    if (!userId) return;
+
+    // report the sender of that message (usually the other user)
+    const reportedUserId = msg.sender_id;
+
+    const reason = window.prompt("Report reason (optional):", "Spam / Harassment / Inappropriate");
+    const { error } = await supabase.from("reports").insert({
+      match_id: matchId,
+      reporter_id: userId,
+      reported_user_id: reportedUserId,
+      message_id: msg.id,
+      reason: reason ?? null,
+    });
+
+    if (error) {
+      setStatus(`Report failed: ${error.message}`);
+      return;
+    }
+
+    setStatus("Reported ✅");
+    window.setTimeout(() => setStatus(""), 1200);
+    closeMenu();
+  }
+
+  // Close menu when tapping anywhere
+  useEffect(() => {
+    const onDown = () => {
+      if (menu.open) closeMenu();
+    };
+    window.addEventListener("pointerdown", onDown);
+    return () => window.removeEventListener("pointerdown", onDown);
+  }, [menu.open]);
 
   // Auto scroll when messages update
   useEffect(() => {
@@ -108,7 +206,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     // mark typing true
     setTyping(true);
 
-    // debounce: set false after 4s of no input (TEMP TEST VALUE)
+    // debounce: set false after 4s of no input
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
       setTyping(false);
@@ -148,8 +246,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
             if (prev.some((x) => x.id === m.id)) return prev;
             const next = [...prev, m];
             next.sort(
-              (a, b) =>
-                new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+              (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
             );
             return next;
           });
@@ -200,6 +297,9 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     return () => {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       setTyping(false);
+
+      if (pressTimerRef.current) window.clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, matchId]);
@@ -227,7 +327,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       return;
     }
 
-    // No loadMessages() needed; realtime will deliver it
+    // Realtime will deliver it
     await markRead();
   }
 
@@ -242,13 +342,10 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
         title="Chat"
         right={
           <>
-            <button
-              className="btn btn-gray"
-              onClick={() => (window.location.href = "/matches")}
-            >
+            <button className="btn btn-gray" type="button" onClick={() => (window.location.href = "/matches")}>
               ← Matches
             </button>
-            <button className="btn btn-gray" onClick={logout}>
+            <button className="btn btn-gray" type="button" onClick={logout}>
               Logout
             </button>
           </>
@@ -262,6 +359,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
             borderRadius: 14,
             background: "rgba(255,244,235,0.85)",
             marginBottom: 12,
+            fontWeight: 800,
           }}
         >
           {status}
@@ -312,6 +410,28 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
                   : "var(--btn-gray)",
                 color: mine ? "white" : "var(--text)",
                 boxShadow: "0 6px 12px rgba(0,0,0,0.12)",
+                cursor: "context-menu",
+                userSelect: "text",
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                openMenuAt(e.clientX, e.clientY, m);
+              }}
+              onPointerDown={(e) => {
+                // long press for touch
+                if (e.pointerType === "touch") {
+                  pressTimerRef.current = window.setTimeout(() => {
+                    openMenuAt(e.clientX, e.clientY, m);
+                  }, 450);
+                }
+              }}
+              onPointerUp={() => {
+                if (pressTimerRef.current) window.clearTimeout(pressTimerRef.current);
+                pressTimerRef.current = null;
+              }}
+              onPointerCancel={() => {
+                if (pressTimerRef.current) window.clearTimeout(pressTimerRef.current);
+                pressTimerRef.current = null;
               }}
             >
               {m.body}
@@ -325,16 +445,62 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
         <input
           value={text}
-          onChange={(e) => handleTypingChange(e.target.value)} // ✅ IMPORTANT FIX
+          onChange={(e) => handleTypingChange(e.target.value)}
           placeholder="Type a message…"
           onKeyDown={(e) => {
             if (e.key === "Enter") sendMessage();
           }}
         />
-        <button className="btn btn-warm" onClick={sendMessage}>
+        <button className="btn btn-warm" type="button" onClick={sendMessage}>
           Send
         </button>
       </div>
+
+      {/* ✅ Long-press / right-click menu */}
+      {menu.open && menu.msg && (
+        <div
+          style={{
+            position: "fixed",
+            left: menu.x,
+            top: menu.y,
+            width: 220,
+            background: "white",
+            borderRadius: 14,
+            boxShadow: "0 18px 40px rgba(0,0,0,0.25)",
+            border: "1px solid rgba(0,0,0,0.08)",
+            padding: 8,
+            zIndex: 9999,
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <button
+            className="btn btn-gray"
+            type="button"
+            style={{ width: "100%", marginBottom: 8 }}
+            onClick={() => copyMessage(menu.msg!.body)}
+          >
+            📋 Copy
+          </button>
+
+          <button
+            className="btn btn-gray"
+            type="button"
+            style={{ width: "100%", marginBottom: 8 }}
+            onClick={() => deleteMessage(menu.msg!)}
+          >
+            🗑️ Delete
+          </button>
+
+          <button
+            className="btn btn-warm"
+            type="button"
+            style={{ width: "100%" }}
+            onClick={() => reportMessage(menu.msg!)}
+          >
+            🚩 Report
+          </button>
+        </div>
+      )}
     </main>
   );
 }
