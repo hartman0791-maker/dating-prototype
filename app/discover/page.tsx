@@ -51,7 +51,7 @@ export default function DiscoverPage() {
         return;
       }
       setUserId(data.session.user.id);
-      await loadProfiles();
+      await loadProfiles(true);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -74,17 +74,23 @@ export default function DiscoverPage() {
     return out;
   }
 
-  async function loadProfiles() {
-    setStatus("Loading...");
+  async function loadProfiles(showLoading = false) {
+    if (showLoading) setStatus("Loading...");
+
     const { data, error } = await supabase.rpc("get_discovery_profiles", { limit_count: 10 });
-    if (error) return setStatus(`Error: ${error.message}`);
+    if (error) {
+      setStatus(`Error: ${error.message}`);
+      return;
+    }
 
     const raw = (data ?? []) as DiscoveryRow[];
     const list = await attachSignedUrls(raw);
 
     setProfiles(list);
     setCurrent(list[0] ?? null);
-    setStatus(list.length ? "" : "No more profiles.");
+
+    // ✅ only show "No more profiles" when truly empty
+    setStatus(list.length ? "" : "");
   }
 
   async function swipe(direction: "like" | "pass") {
@@ -97,7 +103,7 @@ export default function DiscoverPage() {
       try {
         const targetId = current.id;
 
-        // move UI forward immediately
+        // Move UI forward immediately
         const remaining = profiles.slice(1);
         setProfiles(remaining);
         setCurrent(remaining[0] ?? null);
@@ -117,7 +123,7 @@ export default function DiscoverPage() {
         if (result?.matched) setStatus(`It's a match! match_id: ${result.match_id}`);
         else setStatus("");
 
-        if (remaining.length < 3) loadProfiles();
+        if (remaining.length < 3) loadProfiles(false);
       } finally {
         setSwiping(false);
       }
@@ -134,7 +140,7 @@ export default function DiscoverPage() {
     if (error) return setStatus(`Reset failed: ${error.message}`);
 
     setStatus("Swipes reset ✅ Reloading...");
-    await loadProfiles();
+    await loadProfiles(true);
   }
 
   async function logout() {
@@ -150,6 +156,18 @@ export default function DiscoverPage() {
         .card { transition: transform 180ms ease, opacity 180ms ease; will-change: transform, opacity; }
         .card.in { opacity: 1; transform: translateY(0) scale(1); }
         .card.out { opacity: 0; transform: translateY(10px) scale(0.98); }
+
+        .emptyCard{
+          padding: 18px;
+          border-radius: 22px;
+          background:
+            radial-gradient(circle at 20% 10%, rgba(255,77,121,0.18), transparent 55%),
+            radial-gradient(circle at 90% 20%, rgba(255,154,60,0.18), transparent 55%),
+            linear-gradient(180deg, var(--card-solid), rgba(238,242,247,0.85));
+          border: 1px solid var(--border);
+          box-shadow: 0 14px 28px rgba(0,0,0,0.10);
+          text-align: center;
+        }
       `}</style>
 
       <AppHeader
@@ -171,16 +189,68 @@ export default function DiscoverPage() {
         }
       />
 
+      {/* Status */}
       {status && (
         <div style={{ padding: 12, borderRadius: 14, background: "rgba(255, 244, 235, 0.85)", marginBottom: 12 }}>
           {status}
         </div>
       )}
 
+      {/* ✅ Premium empty state instead of plain "Reload" */}
       {!current ? (
-        <button className="btn btn-gray btn-full" type="button" onClick={loadProfiles}>
-          Reload
-        </button>
+        <div className="emptyCard">
+          <div
+            style={{
+              width: 58,
+              height: 58,
+              borderRadius: 18,
+              margin: "0 auto 12px auto",
+              display: "grid",
+              placeItems: "center",
+              background: "linear-gradient(135deg, var(--warm1), var(--warm2))",
+              boxShadow: "0 16px 30px rgba(255, 77, 121, 0.20)",
+            }}
+            aria-hidden="true"
+          >
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M12 21s-7-4.5-9.5-9C.2 8.6 2.3 5 6.4 5c2 0 3.4 1 4.6 2.4C12.2 6 13.6 5 15.6 5c4.1 0 6.2 3.6 3.9 7-2.5 4.5-9.5 9-9.5 9z"
+                fill="white"
+                opacity="0.95"
+              />
+            </svg>
+          </div>
+
+          <div style={{ fontWeight: 950, fontSize: 18, letterSpacing: -0.2 }}>You’re all caught up 🎉</div>
+
+          <div style={{ marginTop: 6, fontSize: 13, opacity: 0.75, fontWeight: 700, lineHeight: 1.35 }}>
+            No new profiles match your feed right now. Check again later — or reset your swipes to re-see people.
+          </div>
+
+          <div style={{ display: "flex", gap: 10, marginTop: 14, justifyContent: "center", flexWrap: "wrap" }}>
+            <button
+              className="btn btn-warm"
+              type="button"
+              onClick={() => loadProfiles(true)}
+              style={{ borderRadius: 999, padding: "12px 16px" }}
+            >
+              🔄 Check again
+            </button>
+
+            <button
+              className="btn btn-gray"
+              type="button"
+              onClick={resetMySwipes}
+              style={{ borderRadius: 999, padding: "12px 16px" }}
+            >
+              ♻️ Reset swipes
+            </button>
+          </div>
+
+          <div style={{ marginTop: 10, fontSize: 11, opacity: 0.55, fontWeight: 700 }}>
+            Tip: When more users sign up, they’ll appear after you check again.
+          </div>
+        </div>
       ) : (
         <div
           className={`card ${anim}`}
@@ -204,7 +274,13 @@ export default function DiscoverPage() {
               overflow: "hidden",
             }}
           >
-            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.35) 100%)" }} />
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.35) 100%)",
+              }}
+            />
             <div style={{ position: "absolute", left: 14, bottom: 12, color: "white" }}>
               <div style={{ fontWeight: 950, fontSize: 20 }}>{current.name ?? "Unnamed"}</div>
               <div style={{ fontSize: 12, opacity: 0.9 }}>{current.location_text ?? "No location"}</div>
@@ -244,9 +320,7 @@ export default function DiscoverPage() {
           </div>
 
           {swiping && (
-            <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65, fontWeight: 800 }}>
-              Saving…
-            </div>
+            <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65, fontWeight: 800 }}>Saving…</div>
           )}
         </div>
       )}
