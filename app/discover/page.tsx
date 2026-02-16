@@ -11,6 +11,7 @@ type DiscoveryRow = {
   bio: string | null;
   location_text: string | null;
   avatar_path: string | null;
+  last_seen_at: string | null; // ✅ added
 };
 
 type ViewProfile = DiscoveryRow & { avatar_signed_url: string | null };
@@ -31,6 +32,22 @@ const FALLBACK_AVATAR =
   </svg>
 `);
 
+function timeAgo(iso: string) {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return "";
+  const diffMs = Date.now() - t;
+
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
 export default function DiscoverPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<ViewProfile[]>([]);
@@ -42,6 +59,13 @@ export default function DiscoverPage() {
   const [swiping, setSwiping] = useState(false);
 
   const signedUrlCache = useRef<Record<string, string>>({});
+
+  // ✅ online presence (realtime, no DB writes)
+  const [onlineIds, setOnlineIds] = useState<string[]>([]);
+  const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  // ✅ last seen heartbeat interval
+  const heartbeatRef = useRef<number | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -55,6 +79,53 @@ export default function DiscoverPage() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ✅ Presence: track who is online (global channel)
+  useEffect(() => {
+    if (!userId) return;
+
+    const ch = supabase.channel("presence:online", {
+      config: { presence: { key: userId } },
+    });
+
+    ch.on("presence", { event: "sync" }, () => {
+      const state = ch.presenceState() as Record<string, any[]>;
+      setOnlineIds(Object.keys(state));
+    });
+
+    ch.subscribe(async (status) => {
+      if (status === "SUBSCRIBED") {
+        await ch.track({ online: true, t: Date.now() });
+      }
+    });
+
+    presenceChannelRef.current = ch;
+
+    return () => {
+      if (presenceChannelRef.current) supabase.removeChannel(presenceChannelRef.current);
+      presenceChannelRef.current = null;
+    };
+  }, [userId]);
+
+  // ✅ Heartbeat: update my last_seen_at every 60 seconds
+  useEffect(() => {
+    if (!userId) return;
+
+    const ping = async () => {
+      await supabase
+        .from("profiles")
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq("id", userId);
+    };
+
+    ping();
+    heartbeatRef.current = window.setInterval(ping, 60000);
+
+    return () => {
+      if (heartbeatRef.current) window.clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    };
+  }, [userId]);
 
   async function getSignedAvatarUrl(path: string) {
     if (signedUrlCache.current[path]) return signedUrlCache.current[path];
@@ -74,14 +145,11 @@ export default function DiscoverPage() {
     return out;
   }
 
-  async function loadProfiles(showLoading = false) {
-    if (showLoading) setStatus("Loading...");
+  async function loadProfiles(showLoadingStatus = false) {
+    if (showLoadingStatus) setStatus("Loading...");
 
     const { data, error } = await supabase.rpc("get_discovery_profiles", { limit_count: 10 });
-    if (error) {
-      setStatus(`Error: ${error.message}`);
-      return;
-    }
+    if (error) return setStatus(`Error: ${error.message}`);
 
     const raw = (data ?? []) as DiscoveryRow[];
     const list = await attachSignedUrls(raw);
@@ -89,7 +157,7 @@ export default function DiscoverPage() {
     setProfiles(list);
     setCurrent(list[0] ?? null);
 
-    // ✅ only show "No more profiles" when truly empty
+    // ✅ don’t show “No more profiles.” as status; we render a premium empty state instead
     setStatus(list.length ? "" : "");
   }
 
@@ -103,7 +171,7 @@ export default function DiscoverPage() {
       try {
         const targetId = current.id;
 
-        // Move UI forward immediately
+        // move UI forward immediately
         const remaining = profiles.slice(1);
         setProfiles(remaining);
         setCurrent(remaining[0] ?? null);
@@ -120,7 +188,7 @@ export default function DiscoverPage() {
         }
 
         const result = Array.isArray(data) ? data[0] : data;
-        if (result?.matched) setStatus(`It's a match! match_id: ${result.match_id}`);
+        if (result?.matched) setStatus(`It's a match! 🎉`);
         else setStatus("");
 
         if (remaining.length < 3) loadProfiles(false);
@@ -149,6 +217,7 @@ export default function DiscoverPage() {
   }
 
   const photoUrl = current?.avatar_signed_url || FALLBACK_AVATAR;
+  const isCurrentOnline = current ? onlineIds.includes(current.id) : false;
 
   return (
     <main className="app-container">
@@ -167,6 +236,15 @@ export default function DiscoverPage() {
           border: 1px solid var(--border);
           box-shadow: 0 14px 28px rgba(0,0,0,0.10);
           text-align: center;
+        }
+
+        .onlineDot{
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: #22c55e;
+          box-shadow: 0 0 0 3px rgba(34,197,94,0.18);
+          display: inline-block;
         }
       `}</style>
 
@@ -189,14 +267,13 @@ export default function DiscoverPage() {
         }
       />
 
-      {/* Status */}
       {status && (
         <div style={{ padding: 12, borderRadius: 14, background: "rgba(255, 244, 235, 0.85)", marginBottom: 12 }}>
           {status}
         </div>
       )}
 
-      {/* ✅ Premium empty state instead of plain "Reload" */}
+      {/* ✅ Premium empty state */}
       {!current ? (
         <div className="emptyCard">
           <div
@@ -274,16 +351,24 @@ export default function DiscoverPage() {
               overflow: "hidden",
             }}
           >
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                background: "linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.35) 100%)",
-              }}
-            />
+            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.35) 100%)" }} />
+
             <div style={{ position: "absolute", left: 14, bottom: 12, color: "white" }}>
-              <div style={{ fontWeight: 950, fontSize: 20 }}>{current.name ?? "Unnamed"}</div>
-              <div style={{ fontSize: 12, opacity: 0.9 }}>{current.location_text ?? "No location"}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ fontWeight: 950, fontSize: 20 }}>{current.name ?? "Unnamed"}</div>
+                {isCurrentOnline && <span className="onlineDot" title="Online now" />}
+              </div>
+
+              <div style={{ fontSize: 12, opacity: 0.9 }}>
+                {current.location_text ?? "No location"}
+                {!isCurrentOnline && current.last_seen_at ? (
+                  <>
+                    {" "}
+                    • Last seen {timeAgo(current.last_seen_at)}
+                  </>
+                ) : null}
+                {isCurrentOnline ? <> • Online now</> : null}
+              </div>
             </div>
           </div>
 
