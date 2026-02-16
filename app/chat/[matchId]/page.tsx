@@ -11,7 +11,7 @@ type Message = {
   sender_id: string;
   body: string;
   created_at: string;
-  deleted_at?: string | null;
+  deleted_at?: string | null; // ✅ soft delete for everyone
 };
 
 type TypingRow = {
@@ -36,11 +36,13 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
   const [text, setText] = useState("");
   const [status, setStatus] = useState("");
 
+  // Typing indicator
   const [otherTyping, setOtherTyping] = useState(false);
   const typingTimeoutRef = useRef<any>(null);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
+  // Long-press / right-click menu
   const [menu, setMenu] = useState<MenuState>({ open: false, x: 0, y: 0, msg: null });
   const pressTimerRef = useRef<number | null>(null);
 
@@ -72,7 +74,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     }
   }
 
-  // ✅ Delete for everyone via RPC (server-side)
+  // ✅ Delete for everyone via RPC + show errors clearly
   async function deleteMessageForEveryone(msg: Message) {
     if (!userId) return;
 
@@ -96,16 +98,19 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     });
 
     if (error) {
+      console.log("delete_message_for_everyone error:", error);
       setStatus(`Delete failed: ${error.message}`);
       return;
     }
 
-    // Optimistic UI (realtime UPDATE should also come through)
+    // Optimistic UI update (realtime UPDATE should also arrive)
+    const nowIso = new Date().toISOString();
     setMessages((prev) =>
-      prev.map((m) =>
-        m.id === msg.id ? { ...m, deleted_at: new Date().toISOString(), body: "" } : m
-      )
+      prev.map((m) => (m.id === msg.id ? { ...m, deleted_at: nowIso, body: "" } : m))
     );
+
+    setStatus("Deleted ✅");
+    window.setTimeout(() => setStatus(""), 900);
 
     closeMenu();
   }
@@ -134,7 +139,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     closeMenu();
   }
 
-  // close menu on outside click
+  // Close menu when tapping anywhere
   useEffect(() => {
     const onDown = () => {
       if (menu.open) closeMenu();
@@ -143,10 +148,12 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     return () => window.removeEventListener("pointerdown", onDown);
   }, [menu.open]);
 
+  // Auto scroll when messages update
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Get session on mount
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
@@ -191,6 +198,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     if (error) console.log("markRead error:", error.message);
   }
 
+  // Typing status writer
   async function setTyping(isTyping: boolean) {
     if (!userId) return;
 
@@ -207,6 +215,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     if (error) console.log("setTyping error:", error.message);
   }
 
+  // Input handler
   function handleTypingChange(next: string) {
     setText(next);
     setTyping(true);
@@ -217,6 +226,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     }, 4000);
   }
 
+  // Load messages + mark read
   useEffect(() => {
     if (!userId) return;
 
@@ -224,10 +234,11 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       await loadMessages();
       await markRead();
     })();
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, matchId]);
 
-  // ✅ Listen to INSERT + UPDATE so delete updates propagate to both users
+  // ✅ Realtime: listen for INSERT + UPDATE so deletes propagate
   useEffect(() => {
     if (!userId) return;
 
@@ -264,6 +275,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     };
   }, [userId, matchId]);
 
+  // Realtime typing
   useEffect(() => {
     if (!userId) return;
 
@@ -292,6 +304,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     };
   }, [userId, matchId]);
 
+  // Cleanup
   useEffect(() => {
     return () => {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -362,11 +375,10 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       )}
 
       {otherTyping && (
-        <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 800, opacity: 0.75 }}>
-          Typing…
-        </div>
+        <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 800, opacity: 0.75 }}>Typing…</div>
       )}
 
+      {/* Messages */}
       <div
         style={{
           display: "flex",
@@ -428,6 +440,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
         <div ref={bottomRef} />
       </div>
 
+      {/* Input */}
       <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
         <input
           value={text}
@@ -442,6 +455,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
         </button>
       </div>
 
+      {/* Menu */}
       {menu.open && menu.msg && (
         <div
           style={{
