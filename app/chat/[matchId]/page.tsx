@@ -11,6 +11,7 @@ type Message = {
   sender_id: string;
   body: string;
   created_at: string;
+  deleted_at?: string | null; // ✅ added for "delete for everyone"
 };
 
 type TypingRow = {
@@ -73,10 +74,11 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     }
   }
 
-  async function deleteMessage(msg: Message) {
+  // ✅ Soft delete: delete for everyone by marking deleted_at + clearing body
+  async function deleteMessageForEveryone(msg: Message) {
     if (!userId) return;
 
-    // only allow deleting your own messages
+    // Only allow the sender to delete for everyone
     if (msg.sender_id !== userId) {
       setStatus("You can only delete your own messages.");
       window.setTimeout(() => setStatus(""), 1200);
@@ -84,24 +86,38 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       return;
     }
 
-    const ok = window.confirm("Delete this message?");
+    if (msg.deleted_at) {
+      closeMenu();
+      return;
+    }
+
+    const ok = window.confirm("Delete for everyone?");
     if (!ok) return;
 
-    const { error } = await supabase.from("messages").delete().eq("id", msg.id);
+    const { error } = await supabase
+      .from("messages")
+      .update({
+        deleted_at: new Date().toISOString(),
+        body: "",
+      })
+      .eq("id", msg.id);
+
     if (error) {
       setStatus(`Delete failed: ${error.message}`);
       return;
     }
 
-    // Optimistic remove
-    setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+    // Optimistic UI update (realtime will also deliver UPDATE if enabled)
+    setMessages((prev) =>
+      prev.map((m) => (m.id === msg.id ? { ...m, deleted_at: new Date().toISOString(), body: "" } : m))
+    );
+
     closeMenu();
   }
 
   async function reportMessage(msg: Message) {
     if (!userId) return;
 
-    // report the sender of that message (usually the other user)
     const reportedUserId = msg.sender_id;
 
     const reason = window.prompt("Report reason (optional):", "Spam / Harassment / Inappropriate");
@@ -154,7 +170,8 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
 
     const { data, error } = await supabase
       .from("messages")
-      .select("id,match_id,sender_id,body,created_at")
+      // ✅ include deleted_at
+      .select("id,match_id,sender_id,body,created_at,deleted_at")
       .eq("match_id", matchId)
       .order("created_at", { ascending: true });
 
@@ -191,7 +208,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
         match_id: matchId,
         user_id: userId,
         is_typing: isTyping,
-        updated_at: new Date().toISOString(), // forces update events
+        updated_at: new Date().toISOString(),
       },
       { onConflict: "match_id,user_id" }
     );
@@ -199,14 +216,10 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     if (error) console.log("setTyping error:", error.message);
   }
 
-  // ✅ Input handler that actually triggers typing
   function handleTypingChange(next: string) {
     setText(next);
-
-    // mark typing true
     setTyping(true);
 
-    // debounce: set false after 4s of no input
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
       setTyping(false);
@@ -225,7 +238,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, matchId]);
 
-  // ✅ Realtime: listen for new messages on this match_id
+  // ✅ Realtime: listen for INSERT + UPDATE (deleted_at updates)
   useEffect(() => {
     if (!userId) return;
 
@@ -234,7 +247,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       .on(
         "postgres_changes",
         {
-          event: "INSERT",
+          event: "*", // INSERT and UPDATE
           schema: "public",
           table: "messages",
           filter: `match_id=eq.${matchId}`,
@@ -243,11 +256,9 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
           const m = payload.new as Message;
 
           setMessages((prev) => {
-            if (prev.some((x) => x.id === m.id)) return prev;
-            const next = [...prev, m];
-            next.sort(
-              (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-            );
+            const exists = prev.some((x) => x.id === m.id);
+            const next = exists ? prev.map((x) => (x.id === m.id ? { ...x, ...m } : x)) : [...prev, m];
+            next.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
             return next;
           });
 
@@ -261,7 +272,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     };
   }, [userId, matchId]);
 
-  // ✅ Realtime Typing: listen for INSERT + UPDATE + DELETE
+  // ✅ Realtime Typing
   useEffect(() => {
     if (!userId) return;
 
@@ -278,8 +289,6 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
         (payload) => {
           const row = payload.new as TypingRow | undefined;
           if (!row) return;
-
-          // ignore my own typing row
           if (row.user_id === userId) return;
 
           setOtherTyping(Boolean(row.is_typing));
@@ -292,7 +301,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     };
   }, [userId, matchId]);
 
-  // ✅ Cleanup: stop typing when leaving page
+  // Cleanup
   useEffect(() => {
     return () => {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -308,11 +317,8 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     if (!text.trim() || !userId) return;
 
     const body = text.trim();
-
-    // Clear input immediately
     setText("");
 
-    // Stop typing immediately
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     await setTyping(false);
 
@@ -327,7 +333,6 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       return;
     }
 
-    // Realtime will deliver it
     await markRead();
   }
 
@@ -366,18 +371,9 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
         </div>
       )}
 
-      {/* ✅ Typing indicator */}
+      {/* Typing indicator */}
       {otherTyping && (
-        <div
-          style={{
-            marginBottom: 10,
-            fontSize: 13,
-            fontWeight: 800,
-            opacity: 0.75,
-          }}
-        >
-          Typing…
-        </div>
+        <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 800, opacity: 0.75 }}>Typing…</div>
       )}
 
       {/* Messages */}
@@ -396,6 +392,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       >
         {messages.map((m) => {
           const mine = m.sender_id === userId;
+          const isDeleted = Boolean(m.deleted_at);
 
           return (
             <div
@@ -412,13 +409,13 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
                 boxShadow: "0 6px 12px rgba(0,0,0,0.12)",
                 cursor: "context-menu",
                 userSelect: "text",
+                opacity: isDeleted ? 0.75 : 1,
               }}
               onContextMenu={(e) => {
                 e.preventDefault();
                 openMenuAt(e.clientX, e.clientY, m);
               }}
               onPointerDown={(e) => {
-                // long press for touch
                 if (e.pointerType === "touch") {
                   pressTimerRef.current = window.setTimeout(() => {
                     openMenuAt(e.clientX, e.clientY, m);
@@ -434,7 +431,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
                 pressTimerRef.current = null;
               }}
             >
-              {m.body}
+              {isDeleted ? <i style={{ opacity: 0.7 }}>Message deleted</i> : m.body}
             </div>
           );
         })}
@@ -456,7 +453,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
         </button>
       </div>
 
-      {/* ✅ Long-press / right-click menu */}
+      {/* Long-press / right-click menu */}
       {menu.open && menu.msg && (
         <div
           style={{
@@ -478,6 +475,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
             type="button"
             style={{ width: "100%", marginBottom: 8 }}
             onClick={() => copyMessage(menu.msg!.body)}
+            disabled={Boolean(menu.msg.deleted_at)}
           >
             📋 Copy
           </button>
@@ -486,9 +484,10 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
             className="btn btn-gray"
             type="button"
             style={{ width: "100%", marginBottom: 8 }}
-            onClick={() => deleteMessage(menu.msg!)}
+            onClick={() => deleteMessageForEveryone(menu.msg!)}
+            disabled={Boolean(menu.msg.deleted_at)}
           >
-            🗑️ Delete
+            🗑️ Delete for everyone
           </button>
 
           <button
