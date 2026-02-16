@@ -1,14 +1,46 @@
 "use client";
 export {};
 
+import { useEffect, useState } from "react";
+import { supabase } from "../lib/supabaseClient"; // 👉 adjust path if needed
+
 type Props = {
   title?: string;
   right?: React.ReactNode;
 };
 
 export default function AppHeader({ title = "Modern & Catchy Dating", right }: Props) {
+  const [meLabel, setMeLabel] = useState<string>("");
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      const session = data.session;
+      if (!session) return;
+
+      const uid = session.user.id;
+      const email = session.user.email ?? "";
+
+      // Fetch profile name from profiles table (profiles.id = auth user id)
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("name")
+        .eq("id", uid)
+        .single();
+
+      setMeLabel(profile?.name?.trim() || email || uid);
+    })();
+  }, []);
+
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 16,
+      }}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         {/* Logo */}
         <div
@@ -35,10 +67,19 @@ export default function AppHeader({ title = "Modern & Catchy Dating", right }: P
         <div>
           <div style={{ fontSize: 16, fontWeight: 950, letterSpacing: -0.2 }}>{title}</div>
           <div style={{ fontSize: 12, opacity: 0.7 }}>Match • Chat • Connect</div>
+
+          {/* ✅ User label */}
+          {meLabel && (
+            <div style={{ fontSize: 11, opacity: 0.6, marginTop: 2 }}>
+              Hi, <b>{meLabel}</b> 👋
+            </div>
+          )}
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>{right}</div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+        {right}
+      </div>
     </div>
   );
 }
