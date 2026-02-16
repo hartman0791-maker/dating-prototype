@@ -50,7 +50,6 @@ export default function DiscoverPage() {
       setUserId(data.session.user.id);
       await loadProfiles();
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function getSignedAvatarUrl(path: string) {
@@ -148,8 +147,6 @@ export default function DiscoverPage() {
           </>
         }
       />
-
-      {userId && <p style={{ fontSize: 12, opacity: 0.75, margin: "0 0 12px 0" }}>Logged in as: {userId}</p>}
 
       {status && (
         <div style={{ padding: 12, borderRadius: 14, background: "rgba(255, 244, 235, 0.85)", marginBottom: 12 }}>
