@@ -38,6 +38,9 @@ export default function DiscoverPage() {
   const [status, setStatus] = useState("");
   const [anim, setAnim] = useState<"in" | "out">("in");
 
+  // ✅ prevents double-click / accidental form submit issues
+  const [swiping, setSwiping] = useState(false);
+
   const signedUrlCache = useRef<Record<string, string>>({});
 
   useEffect(() => {
@@ -50,6 +53,7 @@ export default function DiscoverPage() {
       setUserId(data.session.user.id);
       await loadProfiles();
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function getSignedAvatarUrl(path: string) {
@@ -84,28 +88,39 @@ export default function DiscoverPage() {
   }
 
   async function swipe(direction: "like" | "pass") {
-    if (!current) return;
+    if (!current || swiping) return;
 
+    setSwiping(true);
     setAnim("out");
+
     setTimeout(async () => {
-      const targetId = current.id;
-      const remaining = profiles.slice(1);
-      setProfiles(remaining);
-      setCurrent(remaining[0] ?? null);
-      setAnim("in");
+      try {
+        const targetId = current.id;
 
-      const { data, error } = await supabase.rpc("swipe_and_maybe_match", {
-        target_user_id: targetId,
-        swipe_dir: direction,
-      });
+        // move UI forward immediately
+        const remaining = profiles.slice(1);
+        setProfiles(remaining);
+        setCurrent(remaining[0] ?? null);
+        setAnim("in");
 
-      if (error) return setStatus(`Error: ${error.message}`);
+        const { data, error } = await supabase.rpc("swipe_and_maybe_match", {
+          target_user_id: targetId,
+          swipe_dir: direction,
+        });
 
-      const result = Array.isArray(data) ? data[0] : data;
-      if (result?.matched) setStatus(`It's a match! match_id: ${result.match_id}`);
-      else setStatus("");
+        if (error) {
+          setStatus(`Error: ${error.message}`);
+          return;
+        }
 
-      if (remaining.length < 3) loadProfiles();
+        const result = Array.isArray(data) ? data[0] : data;
+        if (result?.matched) setStatus(`It's a match! match_id: ${result.match_id}`);
+        else setStatus("");
+
+        if (remaining.length < 3) loadProfiles();
+      } finally {
+        setSwiping(false);
+      }
     }, 180);
   }
 
@@ -140,10 +155,18 @@ export default function DiscoverPage() {
       <AppHeader
         right={
           <>
-            <button className="btn btn-gray" onClick={() => (window.location.href = "/matches")}>💬 Matches</button>
-            <button className="btn btn-gray" onClick={() => (window.location.href = "/profile")}>👤 Profile</button>
-            <button className="btn btn-soft" onClick={resetMySwipes}>🔄 Reset</button>
-            <button className="btn btn-gray" onClick={logout}>🚪 Logout</button>
+            <button className="btn btn-gray" type="button" onClick={() => (window.location.href = "/matches")}>
+              💬 Matches
+            </button>
+            <button className="btn btn-gray" type="button" onClick={() => (window.location.href = "/profile")}>
+              👤 Profile
+            </button>
+            <button className="btn btn-soft" type="button" onClick={resetMySwipes}>
+              🔄 Reset
+            </button>
+            <button className="btn btn-gray" type="button" onClick={logout}>
+              🚪 Logout
+            </button>
           </>
         }
       />
@@ -155,7 +178,9 @@ export default function DiscoverPage() {
       )}
 
       {!current ? (
-        <button className="btn btn-gray btn-full" onClick={loadProfiles}>Reload</button>
+        <button className="btn btn-gray btn-full" type="button" onClick={loadProfiles}>
+          Reload
+        </button>
       ) : (
         <div
           className={`card ${anim}`}
@@ -189,13 +214,40 @@ export default function DiscoverPage() {
           <p style={{ margin: "0 0 10px 0", color: "var(--muted)" }}>{current.bio ?? "No bio yet."}</p>
 
           <div style={{ display: "flex", gap: 12 }}>
-            <button className="btn btn-gray" style={{ flex: 1, borderRadius: 30, padding: 14 }} onClick={() => swipe("pass")}>
+            <button
+              className="btn btn-gray"
+              style={{ flex: 1, borderRadius: 30, padding: 14 }}
+              type="button"
+              disabled={swiping}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                swipe("pass");
+              }}
+            >
               ❌ Pass
             </button>
-            <button className="btn btn-warm" style={{ flex: 1, borderRadius: 30, padding: 14 }} onClick={() => swipe("like")}>
+
+            <button
+              className="btn btn-warm"
+              style={{ flex: 1, borderRadius: 30, padding: 14 }}
+              type="button"
+              disabled={swiping}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                swipe("like");
+              }}
+            >
               ❤️ Like
             </button>
           </div>
+
+          {swiping && (
+            <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65, fontWeight: 800 }}>
+              Saving…
+            </div>
+          )}
         </div>
       )}
     </main>
