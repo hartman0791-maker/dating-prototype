@@ -11,14 +11,13 @@ type Message = {
   sender_id: string;
   body: string;
   created_at: string;
-  deleted_at?: string | null; // ✅ soft delete for everyone
+  deleted_at?: string | null;
 };
 
 type TypingRow = {
   match_id: string;
   user_id: string;
   is_typing: boolean;
-  updated_at?: string;
 };
 
 type MenuState = {
@@ -35,27 +34,16 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
   const [status, setStatus] = useState("");
-
-  // Typing indicator
   const [otherTyping, setOtherTyping] = useState(false);
-  const typingTimeoutRef = useRef<any>(null);
 
+  const typingTimeoutRef = useRef<any>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  // Long-press / right-click menu
   const [menu, setMenu] = useState<MenuState>({ open: false, x: 0, y: 0, msg: null });
   const pressTimerRef = useRef<number | null>(null);
 
   function openMenuAt(x: number, y: number, msg: Message) {
-    const maxW = typeof window !== "undefined" ? window.innerWidth : 9999;
-    const maxH = typeof window !== "undefined" ? window.innerHeight : 9999;
-
-    setMenu({
-      open: true,
-      x: Math.min(x, maxW - 240),
-      y: Math.min(y, maxH - 200),
-      msg,
-    });
+    setMenu({ open: true, x, y, msg });
   }
 
   function closeMenu() {
@@ -63,29 +51,18 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
   }
 
   async function copyMessage(body: string) {
-    try {
-      await navigator.clipboard.writeText(body);
-      setStatus("Copied ✅");
-      window.setTimeout(() => setStatus(""), 900);
-      closeMenu();
-    } catch {
-      setStatus("Copy failed");
-      window.setTimeout(() => setStatus(""), 900);
-    }
+    await navigator.clipboard.writeText(body);
+    setStatus("Copied ✅");
+    setTimeout(() => setStatus(""), 900);
+    closeMenu();
   }
 
-  // ✅ Delete for everyone via RPC + show errors clearly
   async function deleteMessageForEveryone(msg: Message) {
     if (!userId) return;
 
     if (msg.sender_id !== userId) {
       setStatus("You can only delete your own messages.");
-      window.setTimeout(() => setStatus(""), 1200);
-      closeMenu();
-      return;
-    }
-
-    if (msg.deleted_at) {
+      setTimeout(() => setStatus(""), 1500);
       closeMenu();
       return;
     }
@@ -93,67 +70,58 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     const ok = window.confirm("Delete for everyone?");
     if (!ok) return;
 
-    const { error } = await supabase.rpc("delete_message_for_everyone", {
+    setStatus("Deleting…");
+
+    const { data, error } = await supabase.rpc("delete_message_for_everyone", {
       p_message_id: msg.id,
     });
 
     if (error) {
-      console.log("delete_message_for_everyone error:", error);
+      console.log(error);
       setStatus(`Delete failed: ${error.message}`);
       return;
     }
 
-    // Optimistic UI update (realtime UPDATE should also arrive)
+    if (!data) {
+      setStatus("Not deleted — permission or sender mismatch.");
+      setTimeout(() => setStatus(""), 2000);
+      return;
+    }
+
     const nowIso = new Date().toISOString();
     setMessages((prev) =>
       prev.map((m) => (m.id === msg.id ? { ...m, deleted_at: nowIso, body: "" } : m))
     );
 
     setStatus("Deleted ✅");
-    window.setTimeout(() => setStatus(""), 900);
-
+    setTimeout(() => setStatus(""), 900);
     closeMenu();
   }
 
   async function reportMessage(msg: Message) {
-    if (!userId) return;
-
-    const reportedUserId = msg.sender_id;
-    const reason = window.prompt("Report reason (optional):", "Spam / Harassment / Inappropriate");
-
-    const { error } = await supabase.from("reports").insert({
+    await supabase.from("reports").insert({
       match_id: matchId,
       reporter_id: userId,
-      reported_user_id: reportedUserId,
+      reported_user_id: msg.sender_id,
       message_id: msg.id,
-      reason: reason ?? null,
+      reason: "User reported message",
     });
 
-    if (error) {
-      setStatus(`Report failed: ${error.message}`);
-      return;
-    }
-
     setStatus("Reported ✅");
-    window.setTimeout(() => setStatus(""), 1200);
+    setTimeout(() => setStatus(""), 900);
     closeMenu();
   }
 
-  // Close menu when tapping anywhere
   useEffect(() => {
-    const onDown = () => {
-      if (menu.open) closeMenu();
-    };
+    const onDown = () => menu.open && closeMenu();
     window.addEventListener("pointerdown", onDown);
     return () => window.removeEventListener("pointerdown", onDown);
   }, [menu.open]);
 
-  // Auto scroll when messages update
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Get session on mount
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
@@ -166,43 +134,19 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
   }, []);
 
   async function loadMessages() {
-    setStatus("Loading messages...");
-
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("messages")
       .select("id,match_id,sender_id,body,created_at,deleted_at")
       .eq("match_id", matchId)
-      .order("created_at", { ascending: true });
-
-    if (error) {
-      setStatus(`Error: ${error.message}`);
-      return;
-    }
+      .order("created_at");
 
     setMessages((data ?? []) as Message[]);
-    setStatus("");
   }
 
-  async function markRead() {
-    if (!userId) return;
-
-    const { error } = await supabase.from("message_reads").upsert(
-      {
-        match_id: matchId,
-        user_id: userId,
-        last_read_at: new Date().toISOString(),
-      },
-      { onConflict: "match_id,user_id" }
-    );
-
-    if (error) console.log("markRead error:", error.message);
-  }
-
-  // Typing status writer
   async function setTyping(isTyping: boolean) {
     if (!userId) return;
 
-    const { error } = await supabase.from("typing_status").upsert(
+    await supabase.from("typing_status").upsert(
       {
         match_id: matchId,
         user_id: userId,
@@ -211,34 +155,21 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       },
       { onConflict: "match_id,user_id" }
     );
-
-    if (error) console.log("setTyping error:", error.message);
   }
 
-  // Input handler
-  function handleTypingChange(next: string) {
-    setText(next);
+  function handleTypingChange(v: string) {
+    setText(v);
     setTyping(true);
 
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(() => {
-      setTyping(false);
-    }, 4000);
+    typingTimeoutRef.current = setTimeout(() => setTyping(false), 4000);
   }
 
-  // Load messages + mark read
   useEffect(() => {
     if (!userId) return;
+    loadMessages();
+  }, [userId]);
 
-    (async () => {
-      await loadMessages();
-      await markRead();
-    })();
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, matchId]);
-
-  // ✅ Realtime: listen for INSERT + UPDATE so deletes propagate
   useEffect(() => {
     if (!userId) return;
 
@@ -246,36 +177,21 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       .channel(`chat:${matchId}`)
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "messages",
-          filter: `match_id=eq.${matchId}`,
-        },
+        { event: "*", schema: "public", table: "messages", filter: `match_id=eq.${matchId}` },
         (payload) => {
           const m = payload.new as Message;
 
           setMessages((prev) => {
             const exists = prev.some((x) => x.id === m.id);
-            const next = exists
-              ? prev.map((x) => (x.id === m.id ? { ...x, ...m } : x))
-              : [...prev, m];
-
-            next.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-            return next;
+            return exists ? prev.map((x) => (x.id === m.id ? { ...x, ...m } : x)) : [...prev, m];
           });
-
-          markRead();
         }
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [userId, matchId]);
+    return () => supabase.removeChannel(channel);
+  }, [userId]);
 
-  // Realtime typing
   useEffect(() => {
     if (!userId) return;
 
@@ -283,60 +199,28 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       .channel(`typing:${matchId}`)
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "typing_status",
-          filter: `match_id=eq.${matchId}`,
-        },
+        { event: "*", schema: "public", table: "typing_status", filter: `match_id=eq.${matchId}` },
         (payload) => {
-          const row = payload.new as TypingRow | undefined;
-          if (!row) return;
-          if (row.user_id === userId) return;
-
-          setOtherTyping(Boolean(row.is_typing));
+          const row = payload.new as TypingRow;
+          if (row.user_id !== userId) setOtherTyping(row.is_typing);
         }
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [userId, matchId]);
-
-  // Cleanup
-  useEffect(() => {
-    return () => {
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      setTyping(false);
-
-      if (pressTimerRef.current) window.clearTimeout(pressTimerRef.current);
-      pressTimerRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, matchId]);
+    return () => supabase.removeChannel(channel);
+  }, [userId]);
 
   async function sendMessage() {
-    if (!text.trim() || !userId) return;
+    if (!text.trim()) return;
 
-    const body = text.trim();
-    setText("");
-
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    await setTyping(false);
-
-    const { error } = await supabase.from("messages").insert({
+    await supabase.from("messages").insert({
       match_id: matchId,
       sender_id: userId,
-      body,
+      body: text.trim(),
     });
 
-    if (error) {
-      setStatus(`Send failed: ${error.message}`);
-      return;
-    }
-
-    await markRead();
+    setText("");
+    setTyping(false);
   }
 
   async function logout() {
@@ -346,155 +230,55 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
 
   return (
     <main className="app-container" style={{ maxWidth: 560 }}>
-      <AppHeader
-        title="Chat"
-        right={
-          <>
-            <button className="btn btn-gray" type="button" onClick={() => (window.location.href = "/matches")}>
-              ← Matches
-            </button>
-            <button className="btn btn-gray" type="button" onClick={logout}>
-              Logout
-            </button>
-          </>
-        }
-      />
+      <AppHeader title="Chat" right={<button className="btn btn-gray" onClick={logout}>Logout</button>} />
 
       {status && (
-        <div
-          style={{
-            padding: 12,
-            borderRadius: 14,
-            background: "rgba(255,244,235,0.85)",
-            marginBottom: 12,
-            fontWeight: 800,
-          }}
-        >
+        <div style={{ padding: 12, borderRadius: 14, background: "#fff3cd", marginBottom: 12 }}>
           {status}
         </div>
       )}
 
-      {otherTyping && (
-        <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 800, opacity: 0.75 }}>Typing…</div>
-      )}
+      {otherTyping && <div style={{ marginBottom: 10, fontWeight: 700 }}>Typing…</div>}
 
-      {/* Messages */}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-          maxHeight: "55vh",
-          overflowY: "auto",
-          padding: 12,
-          borderRadius: 18,
-          background: "var(--card-solid)",
-          border: "1px solid var(--border)",
-        }}
-      >
+      <div style={{ maxHeight: "55vh", overflowY: "auto", padding: 12, borderRadius: 18, background: "#f5f5f5" }}>
         {messages.map((m) => {
           const mine = m.sender_id === userId;
-          const isDeleted = Boolean(m.deleted_at);
+          const deleted = Boolean(m.deleted_at);
 
           return (
             <div
               key={m.id}
               style={{
                 alignSelf: mine ? "flex-end" : "flex-start",
-                maxWidth: "75%",
-                padding: "10px 14px",
-                borderRadius: 18,
-                background: mine
-                  ? "linear-gradient(135deg, var(--warm1), var(--warm2))"
-                  : "var(--btn-gray)",
-                color: mine ? "white" : "var(--text)",
-                boxShadow: "0 6px 12px rgba(0,0,0,0.12)",
+                marginBottom: 6,
+                padding: "8px 12px",
+                borderRadius: 14,
+                background: mine ? "#ff4d79" : "#ddd",
+                color: mine ? "white" : "#222",
                 cursor: "context-menu",
-                userSelect: "text",
-                opacity: isDeleted ? 0.75 : 1,
               }}
               onContextMenu={(e) => {
                 e.preventDefault();
                 openMenuAt(e.clientX, e.clientY, m);
               }}
-              onPointerDown={(e) => {
-                if (e.pointerType === "touch") {
-                  pressTimerRef.current = window.setTimeout(() => {
-                    openMenuAt(e.clientX, e.clientY, m);
-                  }, 450);
-                }
-              }}
-              onPointerUp={() => {
-                if (pressTimerRef.current) window.clearTimeout(pressTimerRef.current);
-                pressTimerRef.current = null;
-              }}
-              onPointerCancel={() => {
-                if (pressTimerRef.current) window.clearTimeout(pressTimerRef.current);
-                pressTimerRef.current = null;
-              }}
             >
-              {isDeleted ? <i style={{ opacity: 0.7 }}>Message deleted</i> : m.body}
+              {deleted ? <i>Message deleted</i> : m.body}
             </div>
           );
         })}
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
-      <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-        <input
-          value={text}
-          onChange={(e) => handleTypingChange(e.target.value)}
-          placeholder="Type a message…"
-          onKeyDown={(e) => {
-            if (e.key === "Enter") sendMessage();
-          }}
-        />
-        <button className="btn btn-warm" type="button" onClick={sendMessage}>
-          Send
-        </button>
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <input value={text} onChange={(e) => handleTypingChange(e.target.value)} />
+        <button className="btn btn-warm" onClick={sendMessage}>Send</button>
       </div>
 
-      {/* Menu */}
       {menu.open && menu.msg && (
-        <div
-          style={{
-            position: "fixed",
-            left: menu.x,
-            top: menu.y,
-            width: 220,
-            background: "white",
-            borderRadius: 14,
-            boxShadow: "0 18px 40px rgba(0,0,0,0.25)",
-            border: "1px solid rgba(0,0,0,0.08)",
-            padding: 8,
-            zIndex: 9999,
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          <button
-            className="btn btn-gray"
-            type="button"
-            style={{ width: "100%", marginBottom: 8 }}
-            onClick={() => copyMessage(menu.msg!.body)}
-            disabled={Boolean(menu.msg.deleted_at)}
-          >
-            📋 Copy
-          </button>
-
-          <button
-            className="btn btn-gray"
-            type="button"
-            style={{ width: "100%", marginBottom: 8 }}
-            onClick={() => deleteMessageForEveryone(menu.msg!)}
-            disabled={Boolean(menu.msg.deleted_at)}
-          >
-            🗑️ Delete for everyone
-          </button>
-
-          <button className="btn btn-warm" type="button" style={{ width: "100%" }} onClick={() => reportMessage(menu.msg!)}>
-            🚩 Report
-          </button>
+        <div style={{ position: "fixed", left: menu.x, top: menu.y, background: "white", padding: 8, borderRadius: 12 }}>
+          <button onClick={() => copyMessage(menu.msg!.body)}>Copy</button>
+          <button onClick={() => deleteMessageForEveryone(menu.msg!)}>Delete for everyone</button>
+          <button onClick={() => reportMessage(menu.msg!)}>Report</button>
         </div>
       )}
     </main>
