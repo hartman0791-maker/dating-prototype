@@ -1,7 +1,7 @@
 "use client";
 export {};
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import AppHeader from "../../components/AppHeader";
 
@@ -11,9 +11,23 @@ type DiscoveryRow = {
   bio: string | null;
   location_text: string | null;
   avatar_path: string | null;
+
+  // Optional fields for filters (if your RPC returns them)
+  birthdate?: string | null;
+  gender?: string | null;
+  looking_for?: string | null;
+  last_seen_at?: string | null;
 };
 
 type ViewProfile = DiscoveryRow & { avatar_signed_url: string | null };
+
+type Filters = {
+  minAge: number;
+  maxAge: number;
+  gender: "any" | "male" | "female" | "other";
+  hasPhoto: boolean;
+  activeRecentlyMins: number; // 0 = ignore
+};
 
 const FALLBACK_AVATAR =
   "data:image/svg+xml;charset=utf-8," +
@@ -31,23 +45,68 @@ const FALLBACK_AVATAR =
   </svg>
 `);
 
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
 export default function DiscoverPage() {
   const [userId, setUserId] = useState<string | null>(null);
+
   const [profiles, setProfiles] = useState<ViewProfile[]>([]);
   const [current, setCurrent] = useState<ViewProfile | null>(null);
+
   const [status, setStatus] = useState("");
-  const [anim, setAnim] = useState<"in" | "out">("in");
-
-  // ✅ Skeleton loader state
   const [loading, setLoading] = useState(false);
-
-  // ✅ prevent double-click
   const [swiping, setSwiping] = useState(false);
 
-  // ✅ Tap card → open modal
+  // Tap-to-preview modal
   const [openProfile, setOpenProfile] = useState<ViewProfile | null>(null);
 
+  // Filters modal
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState<Filters>({
+    minAge: 18,
+    maxAge: 55,
+    gender: "any",
+    hasPhoto: true,
+    activeRecentlyMins: 0,
+  });
+
+  // Match modal
+  const [matchModal, setMatchModal] = useState<{ open: boolean; matchId?: string; profile?: ViewProfile }>(
+    { open: false }
+  );
+
+  // Undo
+  const [undoState, setUndoState] = useState<{
+    canUndo: boolean;
+    profile?: ViewProfile;
+    direction?: "like" | "pass";
+    matchId?: string | null;
+  }>({ canUndo: false });
+
+  // Signed URL cache
   const signedUrlCache = useRef<Record<string, string>>({});
+
+  // ===== Drag swipe (A) =====
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const dragging = useRef(false);
+  const startX = useRef(0);
+  const startY = useRef(0);
+  const dx = useRef(0);
+  const dy = useRef(0);
+  const [dragUi, setDragUi] = useState({ dx: 0, dy: 0, rot: 0, likeOpacity: 0, passOpacity: 0 });
+
+  const SWIPE_THRESHOLD = 110;
+
+  const canInteract = useMemo(() => Boolean(current) && !loading && !swiping && !filtersOpen && !openProfile && !matchModal.open, [
+    current,
+    loading,
+    swiping,
+    filtersOpen,
+    openProfile,
+    matchModal.open,
+  ]);
 
   useEffect(() => {
     (async () => {
@@ -57,7 +116,7 @@ export default function DiscoverPage() {
         return;
       }
       setUserId(data.session.user.id);
-      await loadProfiles();
+      await loadProfiles(true);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -80,11 +139,21 @@ export default function DiscoverPage() {
     return out;
   }
 
-  async function loadProfiles() {
+  // ===== Filters (B): load with params =====
+  async function loadProfiles(initial = false) {
     setLoading(true);
-    setStatus("");
+    if (initial) setStatus("Loading...");
+    else setStatus("");
 
-    const { data, error } = await supabase.rpc("get_discovery_profiles", { limit_count: 10 });
+    // IMPORTANT: This expects the SQL RPC below: get_discovery_profiles_filtered(...)
+    const { data, error } = await supabase.rpc("get_discovery_profiles_filtered", {
+      limit_count: 10,
+      min_age: filters.minAge,
+      max_age: filters.maxAge,
+      gender_filter: filters.gender === "any" ? null : filters.gender,
+      require_photo: filters.hasPhoto,
+      active_within_mins: filters.activeRecentlyMins === 0 ? null : filters.activeRecentlyMins,
+    });
 
     if (error) {
       setLoading(false);
@@ -101,42 +170,182 @@ export default function DiscoverPage() {
     setLoading(false);
   }
 
-  async function swipe(direction: "like" | "pass") {
-    if (!current || swiping) return;
+  // ===== Swipe logic (A + D) =====
+  async function swipe(direction: "like" | "pass", source: "drag" | "button" = "button") {
+    if (!current || !userId || swiping) return;
+
+    // Close preview modal if open
+    if (openProfile) setOpenProfile(null);
 
     setSwiping(true);
-    setAnim("out");
 
-    setTimeout(async () => {
-      try {
-        const targetId = current.id;
+    const target = current;
+    const targetId = target.id;
 
-        // move UI forward immediately
-        const remaining = profiles.slice(1);
-        setProfiles(remaining);
-        setCurrent(remaining[0] ?? null);
-        setAnim("in");
+    // Move UI forward immediately
+    const remaining = profiles.slice(1);
+    setProfiles(remaining);
+    setCurrent(remaining[0] ?? null);
 
-        const { data, error } = await supabase.rpc("swipe_and_maybe_match", {
-          target_user_id: targetId,
-          swipe_dir: direction,
-        });
+    // record undo info before calling RPC
+    setUndoState({ canUndo: true, profile: target, direction, matchId: null });
 
-        if (error) {
-          setStatus(`Error: ${error.message}`);
-          return;
-        }
+    // reset drag UI
+    if (source === "drag") resetCardTransform(true);
 
-        const result = Array.isArray(data) ? data[0] : data;
-        if (result?.matched) setStatus(`It's a match! match_id: ${result.match_id}`);
-        else setStatus("");
+    const { data, error } = await supabase.rpc("swipe_and_maybe_match", {
+      target_user_id: targetId,
+      swipe_dir: direction,
+    });
 
-        if (remaining.length < 3) loadProfiles();
-      } finally {
-        setSwiping(false);
-      }
-    }, 180);
+    if (error) {
+      // Roll back UI (best effort)
+      setStatus(`Error: ${error.message}`);
+      setProfiles((prev) => [target, ...prev]);
+      setCurrent(target);
+      setSwiping(false);
+      return;
+    }
+
+    const result = Array.isArray(data) ? data[0] : data;
+
+    if (result?.matched) {
+      // If match happened, we can still undo the swipe row, but match row may remain.
+      // So we DISABLE undo when match occurs (clean behavior).
+      setUndoState({ canUndo: false });
+      setMatchModal({ open: true, matchId: result.match_id, profile: target });
+      setStatus("");
+    } else {
+      setStatus("");
+    }
+
+    // If running low, fetch more
+    if (remaining.length < 3) {
+      await loadProfiles(false);
+    }
+
+    setSwiping(false);
   }
+
+  async function undoLastSwipe() {
+    if (!userId || !undoState.canUndo || !undoState.profile) return;
+
+    // If a match happened, we disabled undo. Keep it that way.
+    const p = undoState.profile;
+
+    setStatus("Undoing…");
+
+    // Best-effort: delete swipe record (your swipes table must use swiper_id + swipee_id)
+    const { error } = await supabase
+      .from("swipes")
+      .delete()
+      .eq("swiper_id", userId)
+      .eq("swipee_id", p.id);
+
+    if (error) {
+      setStatus(`Undo failed: ${error.message}`);
+      return;
+    }
+
+    // Put the profile back on top
+    setProfiles((prev) => [p, ...prev]);
+    setCurrent(p);
+    setUndoState({ canUndo: false });
+    setStatus("Undone ✅");
+    window.setTimeout(() => setStatus(""), 900);
+  }
+
+  // ===== Drag handling =====
+  function applyCardTransform(_dx: number, _dy: number) {
+    const r = clamp(_dx / 180, -1.2, 1.2);
+    const rot = r * 10;
+    const likeOpacity = clamp((_dx - 20) / 140, 0, 1);
+    const passOpacity = clamp((-_dx - 20) / 140, 0, 1);
+
+    setDragUi({ dx: _dx, dy: _dy, rot, likeOpacity, passOpacity });
+  }
+
+  function resetCardTransform(instant = false) {
+    const el = cardRef.current;
+    if (!el) {
+      setDragUi({ dx: 0, dy: 0, rot: 0, likeOpacity: 0, passOpacity: 0 });
+      return;
+    }
+
+    if (instant) {
+      el.style.transition = "none";
+      setDragUi({ dx: 0, dy: 0, rot: 0, likeOpacity: 0, passOpacity: 0 });
+      // re-enable transitions next tick
+      requestAnimationFrame(() => {
+        el.style.transition = "transform 180ms ease, opacity 180ms ease";
+      });
+      return;
+    }
+
+    el.style.transition = "transform 220ms ease, opacity 220ms ease";
+    setDragUi({ dx: 0, dy: 0, rot: 0, likeOpacity: 0, passOpacity: 0 });
+    window.setTimeout(() => {
+      el.style.transition = "transform 180ms ease, opacity 180ms ease";
+    }, 240);
+  }
+
+  function onPointerDown(e: React.PointerEvent) {
+    if (!canInteract) return;
+    dragging.current = true;
+    startX.current = e.clientX;
+    startY.current = e.clientY;
+    dx.current = 0;
+    dy.current = 0;
+
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+
+  function onPointerMove(e: React.PointerEvent) {
+    if (!dragging.current || !canInteract) return;
+    dx.current = e.clientX - startX.current;
+    dy.current = e.clientY - startY.current;
+    applyCardTransform(dx.current, dy.current);
+  }
+
+  async function onPointerUp() {
+    if (!dragging.current) return;
+    dragging.current = false;
+
+    const finalDx = dx.current;
+
+    // swipe decision
+    if (finalDx > SWIPE_THRESHOLD) {
+      // fling out
+      applyCardTransform(420, dy.current);
+      await swipe("like", "drag");
+      return;
+    }
+    if (finalDx < -SWIPE_THRESHOLD) {
+      applyCardTransform(-420, dy.current);
+      await swipe("pass", "drag");
+      return;
+    }
+
+    resetCardTransform(false);
+  }
+
+  // Keyboard shortcuts (nice bonus)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!canInteract) return;
+      if (e.key === "ArrowLeft") swipe("pass");
+      if (e.key === "ArrowRight") swipe("like");
+      if (e.key === "z" || e.key === "Z") undoLastSwipe();
+      if (e.key === "Escape") {
+        if (openProfile) setOpenProfile(null);
+        if (filtersOpen) setFiltersOpen(false);
+        if (matchModal.open) setMatchModal({ open: false });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canInteract, openProfile, filtersOpen, matchModal.open, current, profiles, undoState]);
 
   async function resetMySwipes() {
     if (!userId) return;
@@ -147,8 +356,9 @@ export default function DiscoverPage() {
     const { error } = await supabase.from("swipes").delete().eq("swiper_id", userId);
     if (error) return setStatus(`Reset failed: ${error.message}`);
 
+    setUndoState({ canUndo: false });
     setStatus("Swipes reset ✅ Reloading...");
-    await loadProfiles();
+    await loadProfiles(false);
   }
 
   async function logout() {
@@ -161,11 +371,30 @@ export default function DiscoverPage() {
   return (
     <main className="app-container">
       <style>{`
-        .card { transition: transform 180ms ease, opacity 180ms ease; will-change: transform, opacity; cursor: pointer; }
-        .card.in { opacity: 1; transform: translateY(0) scale(1); }
-        .card.out { opacity: 0; transform: translateY(10px) scale(0.98); }
+        .card { transition: transform 180ms ease, opacity 180ms ease; will-change: transform, opacity; user-select: none; }
+        .card.in { opacity: 1; }
+        .card.out { opacity: 0.92; }
+        .modalOverlay{
+          position: fixed; inset: 0;
+          background: rgba(0,0,0,0.48);
+          display: grid; place-items: center;
+          padding: 18px; z-index: 9999;
+        }
+        .modalCard{
+          width: min(560px, 100%);
+          border-radius: 22px; overflow: hidden;
+          background: white;
+          border: 1px solid rgba(0,0,0,0.08);
+          box-shadow: 0 24px 70px rgba(0,0,0,0.30);
+        }
+        .modalHero{
+          height: 320px;
+          background-size: cover;
+          background-position: center;
+          position: relative;
+        }
 
-        /* ✅ Shimmer skeleton */
+        /* Shimmer skeleton */
         .skeletonWrap{
           padding: 20px;
           border-radius: 22px;
@@ -199,34 +428,49 @@ export default function DiscoverPage() {
           to{ transform: translateX(140%); }
         }
 
-        .modalOverlay{
-          position: fixed;
-          inset: 0;
-          background: rgba(0,0,0,0.48);
+        .badgeLike, .badgePass{
+          position: absolute; top: 16px;
+          padding: 10px 12px;
+          border-radius: 14px;
+          font-weight: 950;
+          letter-spacing: 0.6px;
+          text-transform: uppercase;
+          border: 2px solid rgba(255,255,255,0.9);
+          color: white;
+          backdrop-filter: blur(10px);
+        }
+        .badgeLike{ left: 16px; background: rgba(34,197,94,0.35); }
+        .badgePass{ right: 16px; background: rgba(239,68,68,0.35); }
+
+        .filterGrid{
           display: grid;
-          place-items: center;
-          padding: 18px;
-          z-index: 9999;
+          gap: 10px;
         }
-        .modalCard{
-          width: min(560px, 100%);
-          border-radius: 22px;
-          overflow: hidden;
-          background: white;
-          border: 1px solid rgba(0,0,0,0.08);
-          box-shadow: 0 24px 70px rgba(0,0,0,0.30);
+        .filterRow{
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
         }
-        .modalHero{
-          height: 320px;
-          background-size: cover;
-          background-position: center;
-          position: relative;
+        .label{
+          font-size: 12px;
+          font-weight: 900;
+          opacity: 0.8;
+          margin-bottom: 6px;
+        }
+        .input{
+          width: 100%;
+          padding: 12px;
+          border-radius: 14px;
+          border: 1px solid rgba(0,0,0,0.12);
         }
       `}</style>
 
       <AppHeader
         right={
           <>
+            <button className="btn btn-gray" type="button" onClick={() => setFiltersOpen(true)}>
+              ⚙️ Filters
+            </button>
             <button className="btn btn-gray" type="button" onClick={() => (window.location.href = "/matches")}>
               💬 Matches
             </button>
@@ -249,7 +493,17 @@ export default function DiscoverPage() {
         </div>
       )}
 
-      {/* ✅ SHIMMER SKELETON */}
+      {/* Undo button (D) */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+        <button className="btn btn-gray" type="button" disabled={!undoState.canUndo} onClick={undoLastSwipe}>
+          ↩️ Undo
+        </button>
+        <div style={{ fontSize: 12, opacity: 0.7, fontWeight: 800, display: "flex", alignItems: "center" }}>
+          Tip: drag card • arrows = swipe • Z = undo
+        </div>
+      </div>
+
+      {/* Skeleton loader */}
       {loading && !current ? (
         <div className="skeletonWrap">
           <div className="sk" style={{ height: 260, borderRadius: 18, marginBottom: 16 }} />
@@ -258,98 +512,106 @@ export default function DiscoverPage() {
           <div className="sk" style={{ height: 12, width: "80%", borderRadius: 10, background: "rgba(0,0,0,0.06)" }} />
         </div>
       ) : !current ? (
-        <button className="btn btn-gray btn-full" type="button" onClick={loadProfiles}>
+        <button className="btn btn-gray btn-full" type="button" onClick={() => loadProfiles(false)}>
           Reload
         </button>
       ) : (
-        <div
-          className={`card ${anim}`}
-          role="button"
-          tabIndex={0}
-          onClick={() => setOpenProfile(current)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") setOpenProfile(current);
-          }}
-          style={{
-            padding: 20,
-            borderRadius: 22,
-            background: "linear-gradient(180deg, var(--card-solid), rgba(238,242,247,0.8))",
-            border: "1px solid var(--border)",
-            boxShadow: "0 14px 28px rgba(0,0,0,0.10)",
-          }}
-        >
+        <>
+          {/* Card (A) */}
           <div
+            ref={cardRef}
+            className={`card in`}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
             style={{
-              height: 260,
-              borderRadius: 18,
-              backgroundImage: `url(${photoUrl})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              marginBottom: 16,
-              position: "relative",
-              overflow: "hidden",
+              padding: 20,
+              borderRadius: 22,
+              background: "linear-gradient(180deg, var(--card-solid), rgba(238,242,247,0.8))",
+              border: "1px solid var(--border)",
+              boxShadow: "0 14px 28px rgba(0,0,0,0.10)",
+              transform: `translate(${dragUi.dx}px, ${dragUi.dy}px) rotate(${dragUi.rot}deg)`,
+              touchAction: "none",
+              cursor: canInteract ? "grab" : "default",
             }}
+            onClick={() => setOpenProfile(current)}
           >
-            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.35) 100%)" }} />
-            <div style={{ position: "absolute", left: 14, bottom: 12, color: "white" }}>
-              <div style={{ fontWeight: 950, fontSize: 20 }}>{current.name ?? "Unnamed"}</div>
-              <div style={{ fontSize: 12, opacity: 0.9 }}>{current.location_text ?? "No location"}</div>
-            </div>
-          </div>
-
-          <p style={{ margin: "0 0 10px 0", color: "var(--muted)" }}>{current.bio ?? "No bio yet."}</p>
-
-          <div style={{ display: "flex", gap: 12 }}>
-            <button
-              className="btn btn-gray"
-              style={{ flex: 1, borderRadius: 30, padding: 14 }}
-              type="button"
-              disabled={swiping}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                swipe("pass");
+            <div
+              style={{
+                height: 260,
+                borderRadius: 18,
+                backgroundImage: `url(${photoUrl})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+                marginBottom: 16,
+                position: "relative",
+                overflow: "hidden",
               }}
             >
-              ❌ Pass
-            </button>
+              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.35) 100%)" }} />
 
-            <button
-              className="btn btn-warm"
-              style={{ flex: 1, borderRadius: 30, padding: 14 }}
-              type="button"
-              disabled={swiping}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                swipe("like");
-              }}
-            >
-              ❤️ Like
-            </button>
-          </div>
+              {/* Like/Pass overlays */}
+              <div className="badgeLike" style={{ opacity: dragUi.likeOpacity }}>
+                LIKE
+              </div>
+              <div className="badgePass" style={{ opacity: dragUi.passOpacity }}>
+                NOPE
+              </div>
 
-          {swiping && (
-            <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65, fontWeight: 800 }}>
-              Saving…
+              <div style={{ position: "absolute", left: 14, bottom: 12, color: "white" }}>
+                <div style={{ fontWeight: 950, fontSize: 20 }}>{current.name ?? "Unnamed"}</div>
+                <div style={{ fontSize: 12, opacity: 0.9 }}>{current.location_text ?? "No location"}</div>
+              </div>
             </div>
-          )}
 
-          <div style={{ marginTop: 12, fontSize: 12, opacity: 0.7, fontWeight: 800 }}>
-            Tap card to view full profile
+            <p style={{ margin: "0 0 10px 0", color: "var(--muted)" }}>{current.bio ?? "No bio yet."}</p>
+
+            <div style={{ display: "flex", gap: 12 }}>
+              <button
+                className="btn btn-gray"
+                style={{ flex: 1, borderRadius: 30, padding: 14 }}
+                type="button"
+                disabled={swiping}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  swipe("pass");
+                }}
+              >
+                ❌ Pass
+              </button>
+              <button
+                className="btn btn-warm"
+                style={{ flex: 1, borderRadius: 30, padding: 14 }}
+                type="button"
+                disabled={swiping}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  swipe("like");
+                }}
+              >
+                ❤️ Like
+              </button>
+            </div>
+
+            {swiping && (
+              <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65, fontWeight: 800 }}>
+                Saving…
+              </div>
+            )}
           </div>
-        </div>
+        </>
       )}
 
-      {/* ✅ FULL PROFILE MODAL */}
+      {/* Tap-to-preview modal */}
       {openProfile && (
         <div className="modalOverlay" onClick={() => setOpenProfile(null)} aria-modal="true" role="dialog">
           <div className="modalCard" onClick={(e) => e.stopPropagation()}>
             <div
               className="modalHero"
-              style={{
-                backgroundImage: `url(${openProfile.avatar_signed_url || FALLBACK_AVATAR})`,
-              }}
+              style={{ backgroundImage: `url(${openProfile.avatar_signed_url || FALLBACK_AVATAR})` }}
             >
               <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.58) 100%)" }} />
               <div style={{ position: "absolute", left: 16, bottom: 14, color: "white" }}>
@@ -389,8 +651,159 @@ export default function DiscoverPage() {
                 </button>
               </div>
 
-              <button className="btn btn-gray" style={{ width: "100%", marginTop: 10, borderRadius: 999 }} type="button" onClick={() => setOpenProfile(null)}>
+              <button
+                className="btn btn-gray"
+                style={{ width: "100%", marginTop: 10, borderRadius: 999 }}
+                type="button"
+                onClick={() => setOpenProfile(null)}
+              >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Filters modal (B) */}
+      {filtersOpen && (
+        <div className="modalOverlay" onClick={() => setFiltersOpen(false)} aria-modal="true" role="dialog">
+          <div className="modalCard" onClick={(e) => e.stopPropagation()}>
+            <div style={{ padding: 16, borderBottom: "1px solid rgba(0,0,0,0.08)" }}>
+              <div style={{ fontSize: 18, fontWeight: 950 }}>Filters</div>
+              <div style={{ fontSize: 12, opacity: 0.7, fontWeight: 800, marginTop: 4 }}>
+                Adjust preferences for who you see.
+              </div>
+            </div>
+
+            <div style={{ padding: 16 }} className="filterGrid">
+              <div className="filterRow">
+                <div>
+                  <div className="label">Min age</div>
+                  <input
+                    className="input"
+                    type="number"
+                    value={filters.minAge}
+                    min={18}
+                    max={99}
+                    onChange={(e) => setFilters((f) => ({ ...f, minAge: clamp(Number(e.target.value || 18), 18, 99) }))}
+                  />
+                </div>
+                <div>
+                  <div className="label">Max age</div>
+                  <input
+                    className="input"
+                    type="number"
+                    value={filters.maxAge}
+                    min={18}
+                    max={99}
+                    onChange={(e) => setFilters((f) => ({ ...f, maxAge: clamp(Number(e.target.value || 55), 18, 99) }))}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="label">Gender</div>
+                <select
+                  className="input"
+                  value={filters.gender}
+                  onChange={(e) => setFilters((f) => ({ ...f, gender: e.target.value as any }))}
+                >
+                  <option value="any">Any</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <label style={{ display: "flex", gap: 10, alignItems: "center", fontWeight: 900 }}>
+                <input
+                  type="checkbox"
+                  checked={filters.hasPhoto}
+                  onChange={(e) => setFilters((f) => ({ ...f, hasPhoto: e.target.checked }))}
+                />
+                Require photo
+              </label>
+
+              <div>
+                <div className="label">Active within (minutes)</div>
+                <select
+                  className="input"
+                  value={filters.activeRecentlyMins}
+                  onChange={(e) => setFilters((f) => ({ ...f, activeRecentlyMins: Number(e.target.value) }))}
+                >
+                  <option value={0}>Anytime</option>
+                  <option value={15}>15 minutes</option>
+                  <option value={60}>1 hour</option>
+                  <option value={180}>3 hours</option>
+                  <option value={1440}>24 hours</option>
+                </select>
+              </div>
+
+              <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+                <button className="btn btn-gray" style={{ flex: 1, borderRadius: 999 }} type="button" onClick={() => setFiltersOpen(false)}>
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-warm"
+                  style={{ flex: 1, borderRadius: 999 }}
+                  type="button"
+                  onClick={async () => {
+                    setFiltersOpen(false);
+                    await loadProfiles(false);
+                  }}
+                >
+                  Apply
+                </button>
+              </div>
+
+              <div style={{ fontSize: 12, opacity: 0.7, fontWeight: 800, marginTop: 6 }}>
+                Note: filters need the SQL function <b>get_discovery_profiles_filtered</b>.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Match modal (C) */}
+      {matchModal.open && (
+        <div className="modalOverlay" onClick={() => setMatchModal({ open: false })} aria-modal="true" role="dialog">
+          <div className="modalCard" onClick={(e) => e.stopPropagation()}>
+            <div
+              className="modalHero"
+              style={{ backgroundImage: `url(${matchModal.profile?.avatar_signed_url || FALLBACK_AVATAR})` }}
+            >
+              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(0,0,0,0.30), rgba(0,0,0,0.60))" }} />
+              <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "white", textAlign: "center", padding: 18 }}>
+                <div>
+                  <div style={{ fontSize: 34, fontWeight: 1000, letterSpacing: -0.6 }}>It’s a Match! 💖</div>
+                  <div style={{ marginTop: 8, fontSize: 14, opacity: 0.9, fontWeight: 800 }}>
+                    You and {matchModal.profile?.name ?? "someone"} liked each other.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ padding: 16 }}>
+              <button
+                className="btn btn-warm btn-full"
+                type="button"
+                onClick={() => {
+                  const mid = matchModal.matchId;
+                  setMatchModal({ open: false });
+                  if (mid) window.location.href = `/chat/${mid}`;
+                  else window.location.href = "/matches";
+                }}
+              >
+                💬 Start chat
+              </button>
+
+              <button
+                className="btn btn-gray btn-full"
+                style={{ marginTop: 10 }}
+                type="button"
+                onClick={() => setMatchModal({ open: false })}
+              >
+                Keep swiping
               </button>
             </div>
           </div>
