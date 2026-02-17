@@ -38,10 +38,13 @@ export default function DiscoverPage() {
   const [status, setStatus] = useState("");
   const [anim, setAnim] = useState<"in" | "out">("in");
 
-  // ✅ prevents double-click / accidental form submit issues
+  // ✅ NEW: skeleton loader state
+  const [loading, setLoading] = useState(false);
+
+  // ✅ prevent double click
   const [swiping, setSwiping] = useState(false);
 
-  // ✅ Tap card → open profile modal
+  // ✅ Tap card → open modal
   const [openProfile, setOpenProfile] = useState<ViewProfile | null>(null);
 
   const signedUrlCache = useRef<Record<string, string>>({});
@@ -77,10 +80,18 @@ export default function DiscoverPage() {
     return out;
   }
 
+  // ✅ UPDATED loadProfiles with loading state + clean status
   async function loadProfiles() {
-    setStatus("Loading...");
+    setLoading(true);
+    setStatus("");
+
     const { data, error } = await supabase.rpc("get_discovery_profiles", { limit_count: 10 });
-    if (error) return setStatus(`Error: ${error.message}`);
+
+    if (error) {
+      setLoading(false);
+      setStatus(`Error: ${error.message}`);
+      return;
+    }
 
     const raw = (data ?? []) as DiscoveryRow[];
     const list = await attachSignedUrls(raw);
@@ -88,6 +99,7 @@ export default function DiscoverPage() {
     setProfiles(list);
     setCurrent(list[0] ?? null);
     setStatus(list.length ? "" : "No more profiles.");
+    setLoading(false);
   }
 
   async function swipe(direction: "like" | "pass") {
@@ -162,13 +174,7 @@ export default function DiscoverPage() {
           place-items: center;
           padding: 18px;
           z-index: 9999;
-          animation: modalFade 140ms ease-out both;
         }
-        @keyframes modalFade{
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-
         .modalCard{
           width: min(560px, 100%);
           border-radius: 22px;
@@ -176,43 +182,12 @@ export default function DiscoverPage() {
           background: white;
           border: 1px solid rgba(0,0,0,0.08);
           box-shadow: 0 24px 70px rgba(0,0,0,0.30);
-          animation: modalPop 170ms ease-out both;
-          transform-origin: 50% 60%;
         }
-        @keyframes modalPop{
-          from { transform: translateY(8px) scale(0.985); opacity: 0; }
-          to { transform: translateY(0) scale(1); opacity: 1; }
-        }
-
         .modalHero{
           height: 320px;
           background-size: cover;
           background-position: center;
           position: relative;
-        }
-        .modalHeroShade{
-          position: absolute;
-          inset: 0;
-          background: linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.58) 100%);
-        }
-        .modalHeroText{
-          position: absolute;
-          left: 16px;
-          bottom: 14px;
-          color: white;
-        }
-        .chips{
-          display: flex;
-          gap: 8px;
-          flex-wrap: wrap;
-          margin-top: 10px;
-        }
-        .chip{
-          font-size: 12px;
-          font-weight: 900;
-          padding: 8px 10px;
-          border-radius: 999px;
-          background: rgba(0,0,0,0.06);
         }
       `}</style>
 
@@ -241,7 +216,22 @@ export default function DiscoverPage() {
         </div>
       )}
 
-      {!current ? (
+      {/* ✅ SKELETON LOADER */}
+      {loading && !current ? (
+        <div
+          style={{
+            padding: 20,
+            borderRadius: 22,
+            background: "var(--card-solid)",
+            border: "1px solid var(--border)",
+          }}
+        >
+          <div style={{ height: 260, borderRadius: 18, background: "rgba(0,0,0,0.08)", marginBottom: 16 }} />
+          <div style={{ height: 14, width: "60%", borderRadius: 10, background: "rgba(0,0,0,0.08)", marginBottom: 10 }} />
+          <div style={{ height: 12, width: "90%", borderRadius: 10, background: "rgba(0,0,0,0.06)", marginBottom: 8 }} />
+          <div style={{ height: 12, width: "80%", borderRadius: 10, background: "rgba(0,0,0,0.06)" }} />
+        </div>
+      ) : !current ? (
         <button className="btn btn-gray btn-full" type="button" onClick={loadProfiles}>
           Reload
         </button>
@@ -325,14 +315,9 @@ export default function DiscoverPage() {
         </div>
       )}
 
-      {/* ✅ FULL PROFILE MODAL */}
+      {/* ✅ FULL PROFILE MODAL (optional but works great with skeleton) */}
       {openProfile && (
-        <div
-          className="modalOverlay"
-          onClick={() => setOpenProfile(null)}
-          aria-modal="true"
-          role="dialog"
-        >
+        <div className="modalOverlay" onClick={() => setOpenProfile(null)} aria-modal="true" role="dialog">
           <div className="modalCard" onClick={(e) => e.stopPropagation()}>
             <div
               className="modalHero"
@@ -340,29 +325,16 @@ export default function DiscoverPage() {
                 backgroundImage: `url(${openProfile.avatar_signed_url || FALLBACK_AVATAR})`,
               }}
             >
-              <div className="modalHeroShade" />
-              <div className="modalHeroText">
-                <div style={{ fontSize: 22, fontWeight: 950 }}>
-                  {openProfile.name ?? "Unnamed"}
-                </div>
-                <div style={{ fontSize: 13, opacity: 0.9 }}>
-                  {openProfile.location_text ?? "No location"}
-                </div>
+              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.58) 100%)" }} />
+              <div style={{ position: "absolute", left: 16, bottom: 14, color: "white" }}>
+                <div style={{ fontSize: 22, fontWeight: 950 }}>{openProfile.name ?? "Unnamed"}</div>
+                <div style={{ fontSize: 13, opacity: 0.9 }}>{openProfile.location_text ?? "No location"}</div>
               </div>
             </div>
 
             <div style={{ padding: 16 }}>
               <div style={{ fontWeight: 950, marginBottom: 6 }}>About</div>
-              <div style={{ opacity: 0.82, lineHeight: 1.5 }}>
-                {openProfile.bio ?? "No bio yet."}
-              </div>
-
-              {/* Optional nice “chips” (pure UI) */}
-              <div className="chips">
-                <span className="chip">Verified</span>
-                <span className="chip">Photo</span>
-                <span className="chip">Nearby</span>
-              </div>
+              <div style={{ opacity: 0.82, lineHeight: 1.5 }}>{openProfile.bio ?? "No bio yet."}</div>
 
               <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
                 <button
@@ -391,12 +363,7 @@ export default function DiscoverPage() {
                 </button>
               </div>
 
-              <button
-                className="btn btn-gray"
-                style={{ width: "100%", marginTop: 10, borderRadius: 999 }}
-                type="button"
-                onClick={() => setOpenProfile(null)}
-              >
+              <button className="btn btn-gray" style={{ width: "100%", marginTop: 10, borderRadius: 999 }} type="button" onClick={() => setOpenProfile(null)}>
                 Close
               </button>
             </div>
