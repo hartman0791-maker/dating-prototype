@@ -1,7 +1,8 @@
+
 "use client";
 export {};
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import AppHeader from "../../../components/AppHeader";
 
@@ -41,6 +42,35 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
 
   const [menu, setMenu] = useState<MenuState>({ open: false, x: 0, y: 0, msg: null });
 
+  // ✅ Long-press support (mobile)
+  const pressTimerRef = useRef<number | null>(null);
+
+  // ✅ Delete-for-me store (per match + user)
+  const hiddenKey = useMemo(() => {
+    if (!userId) return null;
+    return `hidden_msgs:${matchId}:${userId}`;
+  }, [matchId, userId]);
+
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+
+  // Load hidden ids from localStorage
+  useEffect(() => {
+    if (!hiddenKey) return;
+    try {
+      const raw = localStorage.getItem(hiddenKey);
+      const arr = raw ? (JSON.parse(raw) as string[]) : [];
+      setHiddenIds(new Set(arr));
+    } catch {
+      setHiddenIds(new Set());
+    }
+  }, [hiddenKey]);
+
+  function persistHidden(next: Set<string>) {
+    setHiddenIds(new Set(next));
+    if (!hiddenKey) return;
+    localStorage.setItem(hiddenKey, JSON.stringify(Array.from(next)));
+  }
+
   function openMenuAt(x: number, y: number, msg: Message) {
     setMenu({ open: true, x, y, msg });
   }
@@ -56,8 +86,24 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     closeMenu();
   }
 
+  // ✅ Delete for me (only hides locally)
+  function deleteForMe(msg: Message) {
+    const next = new Set(hiddenIds);
+    next.add(msg.id);
+    persistHidden(next);
+
+    setStatus("Deleted for you ✅");
+    window.setTimeout(() => setStatus(""), 900);
+    closeMenu();
+  }
+
+  // ✅ Delete for everyone (real delete via deleted_at update)
   async function deleteMessageForEveryone(msg: Message) {
-    if (!userId) return;
+    if (!userId) {
+      setStatus("Not logged in.");
+      window.setTimeout(() => setStatus(""), 1200);
+      return;
+    }
 
     if (msg.sender_id !== userId) {
       setStatus("You can only delete your own messages.");
@@ -71,10 +117,16 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
 
     setStatus("Deleting…");
 
-    // ✅ IMPORTANT: RPC should only set deleted_at (no body update)
-    const { data, error } = await supabase.rpc("delete_message_for_everyone", {
-      p_message_id: msg.id,
-    });
+    const nowIso = new Date().toISOString();
+
+    // ✅ Direct UPDATE (no RPC). Also returns the updated row so we KNOW it worked.
+    const { data, error } = await supabase
+      .from("messages")
+      .update({ deleted_at: nowIso })
+      .eq("id", msg.id)
+      .eq("sender_id", userId)
+      .select("id,deleted_at")
+      .single();
 
     if (error) {
       console.log(error);
@@ -82,15 +134,16 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       return;
     }
 
-    if (!data) {
-      setStatus("Not deleted — permission or sender mismatch.");
-      window.setTimeout(() => setStatus(""), 2000);
+    if (!data?.id) {
+      setStatus("Delete did nothing (RLS blocked or sender mismatch).");
+      window.setTimeout(() => setStatus(""), 2500);
       return;
     }
 
-    // Optimistic UI update
-    const nowIso = new Date().toISOString();
-    setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, deleted_at: nowIso } : m)));
+    // Update UI immediately
+    setMessages((prev) =>
+      prev.map((m) => (m.id === msg.id ? { ...m, deleted_at: data.deleted_at } : m))
+    );
 
     setStatus("Deleted ✅");
     window.setTimeout(() => setStatus(""), 900);
@@ -120,9 +173,11 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     closeMenu();
   }
 
-  // Close menu when clicking anywhere
+  // ✅ Close menu on outside click
   useEffect(() => {
-    const onDown = () => menu.open && closeMenu();
+    const onDown = () => {
+      if (menu.open) closeMenu();
+    };
     window.addEventListener("pointerdown", onDown);
     return () => window.removeEventListener("pointerdown", onDown);
   }, [menu.open]);
@@ -149,7 +204,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       .from("messages")
       .select("id,match_id,sender_id,body,created_at,deleted_at")
       .eq("match_id", matchId)
-      .order("created_at");
+      .order("created_at", { ascending: true });
 
     if (error) {
       setStatus(`Load failed: ${error.message}`);
@@ -202,15 +257,20 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
 
           setMessages((prev) => {
             const exists = prev.some((x) => x.id === m.id);
-            return exists
+            const next = exists
               ? prev.map((x) => (x.id === m.id ? { ...x, ...m } : x))
               : [...prev, m];
+
+            next.sort(
+              (a, b) =>
+                new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            );
+            return next;
           });
         }
       )
       .subscribe();
 
-    // ✅ IMPORTANT: cleanup must return void, not a Promise
     return () => {
       void supabase.removeChannel(channel);
     };
@@ -264,7 +324,6 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     if (error) {
       setStatus(`Send failed: ${error.message}`);
       window.setTimeout(() => setStatus(""), 2000);
-      return;
     }
   }
 
@@ -273,13 +332,18 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     window.location.href = "/login";
   }
 
+  // Filter out hidden messages (delete-for-me)
+  const visibleMessages = useMemo(
+    () => messages.filter((m) => !hiddenIds.has(m.id)),
+    [messages, hiddenIds]
+  );
+
   return (
     <main className="app-container" style={{ maxWidth: 560 }}>
       <AppHeader
         title="Chat"
         right={
           <>
-            {/* ✅ Back buttons added */}
             <button className="btn btn-gray" type="button" onClick={() => (window.location.href = "/matches")}>
               ← Matches
             </button>
@@ -314,7 +378,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
           gap: 8,
         }}
       >
-        {messages.map((m) => {
+        {visibleMessages.map((m) => {
           const mine = m.sender_id === userId;
           const deleted = Boolean(m.deleted_at);
 
@@ -326,14 +390,32 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
                 maxWidth: "78%",
                 padding: "10px 14px",
                 borderRadius: 16,
-                background: mine ? "linear-gradient(135deg, var(--warm1,#ff4d79), var(--warm2,#ff9a3c))" : "#e6e6e6",
+                background: mine
+                  ? "linear-gradient(135deg, var(--warm1,#ff4d79), var(--warm2,#ff9a3c))"
+                  : "#e6e6e6",
                 color: mine ? "white" : "#222",
                 cursor: "context-menu",
                 opacity: deleted ? 0.75 : 1,
+                userSelect: "none",
               }}
               onContextMenu={(e) => {
                 e.preventDefault();
                 openMenuAt(e.clientX, e.clientY, m);
+              }}
+              onPointerDown={(e) => {
+                // ✅ Long press opens menu (mobile)
+                if (pressTimerRef.current) window.clearTimeout(pressTimerRef.current);
+                const x = (e as any).clientX ?? 120;
+                const y = (e as any).clientY ?? 120;
+                pressTimerRef.current = window.setTimeout(() => {
+                  openMenuAt(x, y, m);
+                }, 450);
+              }}
+              onPointerUp={() => {
+                if (pressTimerRef.current) window.clearTimeout(pressTimerRef.current);
+              }}
+              onPointerCancel={() => {
+                if (pressTimerRef.current) window.clearTimeout(pressTimerRef.current);
               }}
             >
               {deleted ? <i>Message deleted</i> : m.body}
@@ -371,14 +453,29 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
             display: "grid",
             gap: 8,
             zIndex: 9999,
+            minWidth: 200,
           }}
+          // ✅ THIS IS THE BIG FIX: allow clicking buttons without closing menu first
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
         >
-          <button type="button" onClick={() => copyMessage(menu.msg!.body)}>
+          <button type="button" onClick={() => copyMessage(menu.msg!.body)} disabled={Boolean(menu.msg!.deleted_at)}>
             Copy
           </button>
-          <button type="button" onClick={() => deleteMessageForEveryone(menu.msg!)}>
+
+          <button type="button" onClick={() => deleteForMe(menu.msg!)}>
+            Delete for me
+          </button>
+
+          <button
+            type="button"
+            onClick={() => deleteMessageForEveryone(menu.msg!)}
+            disabled={menu.msg!.sender_id !== userId || Boolean(menu.msg!.deleted_at)}
+            title={menu.msg!.sender_id !== userId ? "Only the sender can delete for everyone" : ""}
+          >
             Delete for everyone
           </button>
+
           <button type="button" onClick={() => reportMessage(menu.msg!)}>
             Report
           </button>
