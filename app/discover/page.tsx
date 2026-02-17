@@ -38,10 +38,10 @@ export default function DiscoverPage() {
   const [status, setStatus] = useState("");
   const [anim, setAnim] = useState<"in" | "out">("in");
 
-  // ✅ NEW: skeleton loader state
+  // ✅ Skeleton loader state
   const [loading, setLoading] = useState(false);
 
-  // ✅ prevent double click
+  // ✅ prevent double-click
   const [swiping, setSwiping] = useState(false);
 
   // ✅ Tap card → open modal
@@ -80,7 +80,6 @@ export default function DiscoverPage() {
     return out;
   }
 
-  // ✅ UPDATED loadProfiles with loading state + clean status
   async function loadProfiles() {
     setLoading(true);
     setStatus("");
@@ -166,6 +165,40 @@ export default function DiscoverPage() {
         .card.in { opacity: 1; transform: translateY(0) scale(1); }
         .card.out { opacity: 0; transform: translateY(10px) scale(0.98); }
 
+        /* ✅ Shimmer skeleton */
+        .skeletonWrap{
+          padding: 20px;
+          border-radius: 22px;
+          background: var(--card-solid);
+          border: 1px solid var(--border);
+          overflow: hidden;
+          position: relative;
+        }
+        .sk{
+          position: relative;
+          border-radius: 14px;
+          background: rgba(0,0,0,0.08);
+          overflow: hidden;
+        }
+        .sk::after{
+          content:"";
+          position:absolute;
+          inset:0;
+          transform: translateX(-140%);
+          background: linear-gradient(
+            90deg,
+            rgba(255,255,255,0) 0%,
+            rgba(255,255,255,0.45) 45%,
+            rgba(255,255,255,0) 90%
+          );
+          animation: shimmer 1.15s ease-in-out infinite;
+          opacity: 0.65;
+        }
+        @keyframes shimmer{
+          from{ transform: translateX(-140%); }
+          to{ transform: translateX(140%); }
+        }
+
         .modalOverlay{
           position: fixed;
           inset: 0;
@@ -216,20 +249,13 @@ export default function DiscoverPage() {
         </div>
       )}
 
-      {/* ✅ SKELETON LOADER */}
+      {/* ✅ SHIMMER SKELETON */}
       {loading && !current ? (
-        <div
-          style={{
-            padding: 20,
-            borderRadius: 22,
-            background: "var(--card-solid)",
-            border: "1px solid var(--border)",
-          }}
-        >
-          <div style={{ height: 260, borderRadius: 18, background: "rgba(0,0,0,0.08)", marginBottom: 16 }} />
-          <div style={{ height: 14, width: "60%", borderRadius: 10, background: "rgba(0,0,0,0.08)", marginBottom: 10 }} />
-          <div style={{ height: 12, width: "90%", borderRadius: 10, background: "rgba(0,0,0,0.06)", marginBottom: 8 }} />
-          <div style={{ height: 12, width: "80%", borderRadius: 10, background: "rgba(0,0,0,0.06)" }} />
+        <div className="skeletonWrap">
+          <div className="sk" style={{ height: 260, borderRadius: 18, marginBottom: 16 }} />
+          <div className="sk" style={{ height: 14, width: "60%", borderRadius: 10, marginBottom: 10 }} />
+          <div className="sk" style={{ height: 12, width: "90%", borderRadius: 10, marginBottom: 8, background: "rgba(0,0,0,0.06)" }} />
+          <div className="sk" style={{ height: 12, width: "80%", borderRadius: 10, background: "rgba(0,0,0,0.06)" }} />
         </div>
       ) : !current ? (
         <button className="btn btn-gray btn-full" type="button" onClick={loadProfiles}>
@@ -315,7 +341,7 @@ export default function DiscoverPage() {
         </div>
       )}
 
-      {/* ✅ FULL PROFILE MODAL (optional but works great with skeleton) */}
+      {/* ✅ FULL PROFILE MODAL */}
       {openProfile && (
         <div className="modalOverlay" onClick={() => setOpenProfile(null)} aria-modal="true" role="dialog">
           <div className="modalCard" onClick={(e) => e.stopPropagation()}>
