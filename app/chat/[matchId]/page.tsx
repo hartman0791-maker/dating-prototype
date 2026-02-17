@@ -26,7 +26,7 @@ type MatchRow = {
   user_high: string;
 };
 
-type ProfilePresence = {
+type ProfileRow = {
   id: string;
   name: string | null;
   last_seen_at: string | null;
@@ -39,32 +39,54 @@ type MenuState = {
   msg: Message | null;
 };
 
+function getPresenceLabel(lastSeen: string | null | undefined) {
+  if (!lastSeen) return "Offline";
+  const diffMs = Date.now() - new Date(lastSeen).getTime();
+  if (diffMs < 60_000) return "Online recently";
+
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 60) return `Last seen ${mins}m ago`;
+
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `Last seen ${hours}h ago`;
+
+  const d = new Date(lastSeen);
+  return `Last seen ${d.toLocaleDateString()}`;
+}
+
 export default function ChatPage({ params }: { params: { matchId: string } }) {
   const matchId = params.matchId;
 
   const [userId, setUserId] = useState<string | null>(null);
+  const [otherUserId, setOtherUserId] = useState<string | null>(null);
 
-  // messages
+  const [otherProfile, setOtherProfile] = useState<ProfileRow | null>(null);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
 
-  // UI status
   const [status, setStatus] = useState("");
   const [otherTyping, setOtherTyping] = useState(false);
 
-  // other user presence
-  const [otherUserId, setOtherUserId] = useState<string | null>(null);
-  const [otherProfile, setOtherProfile] = useState<ProfilePresence | null>(null);
+  // ✅ Presence: who is currently in the chat room
+  const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
 
-  // menu
+  // menu (optional)
   const [menu, setMenu] = useState<MenuState>({ open: false, x: 0, y: 0, msg: null });
 
-  // refs
   const typingTimeoutRef = useRef<any>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const pressTimerRef = useRef<number | null>(null);
 
-  // ========= helpers =========
+  const roomTopic = useMemo(() => `presence:match:${matchId}`, [matchId]);
+
+  const isOtherOnline = useMemo(() => {
+    if (!otherUserId) return false;
+    return onlineIds.has(otherUserId);
+  }, [onlineIds, otherUserId]);
+
+  const otherName = otherProfile?.name || "User";
+
   function openMenuAt(x: number, y: number, msg: Message) {
     setMenu({ open: true, x, y, msg });
   }
@@ -72,151 +94,28 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     setMenu({ open: false, x: 0, y: 0, msg: null });
   }
 
-  function getPresenceLabel(lastSeen: string | null | undefined) {
-    if (!lastSeen) return "Offline";
-
-    const diffMs = Date.now() - new Date(lastSeen).getTime();
-
-    if (diffMs < 60_000) return "Online now";
-
-    const mins = Math.floor(diffMs / 60_000);
-    if (mins < 60) return `Last seen ${mins}m ago`;
-
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `Last seen ${hours}h ago`;
-
-    const d = new Date(lastSeen);
-    return `Last seen ${d.toLocaleDateString()}`;
-  }
-
-  const isOtherOnline = useMemo(() => {
-    const t = otherProfile?.last_seen_at;
-    if (!t) return false;
-    return Date.now() - new Date(t).getTime() < 60_000;
-  }, [otherProfile?.last_seen_at]);
-
-  async function updatePresence(uid: string) {
-    // best-effort; do not block UI
+  async function updateMyLastSeen(uid: string) {
+    // best effort
     const { error } = await supabase
       .from("profiles")
       .update({ last_seen_at: new Date().toISOString() })
       .eq("id", uid);
-
-    if (error) console.log("presence update error:", error.message);
+    if (error) console.log("update last_seen_at error:", error.message);
   }
 
-  // ========= close menu on outside click =========
-  useEffect(() => {
-    const onDown = () => {
-      if (menu.open) closeMenu();
-    };
-    window.addEventListener("pointerdown", onDown);
-    return () => window.removeEventListener("pointerdown", onDown);
-  }, [menu.open]);
-
-  // ========= auto scroll =========
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // ========= get session + determine other user id =========
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getSession();
-      const uid = data.session?.user.id;
-
-      if (!uid) {
-        window.location.href = "/login";
-        return;
-      }
-
-      setUserId(uid);
-
-      // figure out who the other user is from matches table
-      const { data: match, error: matchErr } = await supabase
-        .from("matches")
-        .select("id,user_low,user_high")
-        .eq("id", matchId)
-        .single();
-
-      if (matchErr) {
-        setStatus(`Match load failed: ${matchErr.message}`);
-        return;
-      }
-
-      const m = match as MatchRow;
-      const other = m.user_low === uid ? m.user_high : m.user_low;
-      setOtherUserId(other);
-    })();
-  }, [matchId]);
-
-  // ========= presence: keep updating my last_seen_at =========
-  useEffect(() => {
-    if (!userId) return;
-
-    // update now
-    void updatePresence(userId);
-
-    // update every 30s while page is open
-    const interval = window.setInterval(() => void updatePresence(userId), 30_000);
-
-    // update when leaving tab (best effort)
-    const onUnload = () => {
-      // cannot await here; best effort
-      void updatePresence(userId);
-    };
-    window.addEventListener("beforeunload", onUnload);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("beforeunload", onUnload);
-      // one last touch when leaving page
-      void updatePresence(userId);
-    };
-  }, [userId]);
-
-  // ========= load other user profile presence =========
-  async function loadOtherPresence(oid: string) {
+  async function loadOtherProfile(oid: string) {
     const { data, error } = await supabase
       .from("profiles")
       .select("id,name,last_seen_at")
       .eq("id", oid)
       .single();
-
     if (error) {
-      console.log("other presence load error:", error.message);
+      console.log("load other profile error:", error.message);
       return;
     }
-    setOtherProfile(data as ProfilePresence);
+    setOtherProfile(data as ProfileRow);
   }
 
-  useEffect(() => {
-    if (!otherUserId) return;
-    void loadOtherPresence(otherUserId);
-  }, [otherUserId]);
-
-  // realtime presence updates for the other user
-  useEffect(() => {
-    if (!otherUserId) return;
-
-    const channel = supabase
-      .channel(`presence:${otherUserId}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${otherUserId}` },
-        (payload) => {
-          const next = payload.new as ProfilePresence;
-          setOtherProfile(next);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [otherUserId]);
-
-  // ========= messages =========
   async function loadMessages() {
     const { data, error } = await supabase
       .from("messages")
@@ -232,46 +131,8 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     setMessages((data ?? []) as Message[]);
   }
 
-  useEffect(() => {
-    if (!userId) return;
-    void loadMessages();
-  }, [userId, matchId]);
-
-  // realtime messages
-  useEffect(() => {
-    if (!userId) return;
-
-    const channel = supabase
-      .channel(`chat:${matchId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "messages", filter: `match_id=eq.${matchId}` },
-        (payload) => {
-          const m = payload.new as Message;
-          setMessages((prev) => {
-            const exists = prev.some((x) => x.id === m.id);
-            const next = exists
-              ? prev.map((x) => (x.id === m.id ? { ...x, ...m } : x))
-              : [...prev, m];
-
-            next.sort(
-              (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-            );
-            return next;
-          });
-        }
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [userId, matchId]);
-
-  // ========= typing indicator =========
   async function setTyping(isTyping: boolean) {
     if (!userId) return;
-
     const { error } = await supabase.from("typing_status").upsert(
       {
         match_id: matchId,
@@ -281,48 +142,16 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       },
       { onConflict: "match_id,user_id" }
     );
-
     if (error) console.log("setTyping error:", error.message);
   }
 
   function handleTypingChange(v: string) {
     setText(v);
     void setTyping(true);
-
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => void setTyping(false), 2500);
   }
 
-  useEffect(() => {
-    if (!userId) return;
-
-    const channel = supabase
-      .channel(`typing:${matchId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "typing_status", filter: `match_id=eq.${matchId}` },
-        (payload) => {
-          const row = payload.new as TypingRow;
-          if (row.user_id !== userId) setOtherTyping(Boolean(row.is_typing));
-        }
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [userId, matchId]);
-
-  // cleanup typing on unmount
-  useEffect(() => {
-    return () => {
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      if (userId) void setTyping(false);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, matchId]);
-
-  // ========= send =========
   async function sendMessage() {
     if (!userId) return;
     if (!text.trim()) return;
@@ -344,14 +173,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
     }
   }
 
-  // ========= menu actions =========
-  async function copyMessage(body: string) {
-    await navigator.clipboard.writeText(body);
-    setStatus("Copied ✅");
-    window.setTimeout(() => setStatus(""), 900);
-    closeMenu();
-  }
-
+  // ✅ Delete for everyone (soft delete via deleted_at)
   async function deleteForEveryone(msg: Message) {
     if (!userId) return;
 
@@ -369,7 +191,6 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
 
     const nowIso = new Date().toISOString();
 
-    // Direct update (no RPC)
     const { data, error } = await supabase
       .from("messages")
       .update({ deleted_at: nowIso })
@@ -390,20 +211,199 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       return;
     }
 
-    setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, deleted_at: data.deleted_at } : m)));
+    setMessages((prev) =>
+      prev.map((m) => (m.id === msg.id ? { ...m, deleted_at: data.deleted_at } : m))
+    );
+
     setStatus("Deleted ✅");
     window.setTimeout(() => setStatus(""), 900);
     closeMenu();
   }
 
   async function logout() {
-    if (userId) await updatePresence(userId);
+    if (userId) await updateMyLastSeen(userId);
     await supabase.auth.signOut();
     window.location.href = "/login";
   }
 
-  const otherName = otherProfile?.name || "User";
-  const presenceText = getPresenceLabel(otherProfile?.last_seen_at);
+  // Close menu on outside click
+  useEffect(() => {
+    const onDown = () => menu.open && closeMenu();
+    window.addEventListener("pointerdown", onDown);
+    return () => window.removeEventListener("pointerdown", onDown);
+  }, [menu.open]);
+
+  // Auto scroll
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // 1) Get session + identify other user from matches
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      const uid = data.session?.user.id;
+
+      if (!uid) {
+        window.location.href = "/login";
+        return;
+      }
+
+      setUserId(uid);
+
+      const { data: match, error: matchErr } = await supabase
+        .from("matches")
+        .select("id,user_low,user_high")
+        .eq("id", matchId)
+        .single();
+
+      if (matchErr) {
+        setStatus(`Match load failed: ${matchErr.message}`);
+        return;
+      }
+
+      const m = match as MatchRow;
+      const other = m.user_low === uid ? m.user_high : m.user_low;
+      setOtherUserId(other);
+      void loadOtherProfile(other);
+    })();
+  }, [matchId]);
+
+  // 2) Keep updating my last_seen_at (backup for “last seen” text)
+  useEffect(() => {
+    if (!userId) return;
+
+    void updateMyLastSeen(userId);
+
+    const interval = window.setInterval(() => void updateMyLastSeen(userId), 30_000);
+
+    const onUnload = () => {
+      void updateMyLastSeen(userId);
+    };
+    window.addEventListener("beforeunload", onUnload);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("beforeunload", onUnload);
+      void updateMyLastSeen(userId);
+    };
+  }, [userId]);
+
+  // 3) Presence channel (TRUE realtime online/offline)
+  useEffect(() => {
+    if (!userId) return;
+
+    // Presence state looks like { [presenceKey]: [{...payload}, ...] }
+    const channel = supabase.channel(roomTopic, {
+      config: { presence: { key: userId } },
+    });
+
+    // On full sync, rebuild online set
+    channel.on("presence", { event: "sync" }, () => {
+      const state = channel.presenceState() as Record<string, any[]>;
+      setOnlineIds(new Set(Object.keys(state)));
+    });
+
+    // On join, add keys
+    channel.on("presence", { event: "join" }, ({ key }) => {
+      setOnlineIds((prev) => new Set([...prev, key]));
+    });
+
+    // On leave, remove keys
+    channel.on("presence", { event: "leave" }, ({ key }) => {
+      setOnlineIds((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+
+      // When someone leaves, refresh their profile so "last seen" updates soon
+      if (otherUserId) void loadOtherProfile(otherUserId);
+    });
+
+    channel.subscribe(async (st) => {
+      if (st === "SUBSCRIBED") {
+        // track my presence payload (optional extra state)
+        await channel.track({ user_id: userId, at: new Date().toISOString() });
+      }
+    });
+
+    return () => {
+      // cleanup must return void (not Promise)
+      void supabase.removeChannel(channel);
+    };
+  }, [userId, roomTopic, otherUserId]);
+
+  // 4) Load + realtime messages
+  useEffect(() => {
+    if (!userId) return;
+    void loadMessages();
+  }, [userId, matchId]);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    const channel = supabase
+      .channel(`chat:${matchId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "messages", filter: `match_id=eq.${matchId}` },
+        (payload) => {
+          const m = payload.new as Message;
+
+          setMessages((prev) => {
+            const exists = prev.some((x) => x.id === m.id);
+            const next = exists
+              ? prev.map((x) => (x.id === m.id ? { ...x, ...m } : x))
+              : [...prev, m];
+
+            next.sort(
+              (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            );
+            return next;
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [userId, matchId]);
+
+  // 5) realtime typing
+  useEffect(() => {
+    if (!userId) return;
+
+    const channel = supabase
+      .channel(`typing:${matchId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "typing_status", filter: `match_id=eq.${matchId}` },
+        (payload) => {
+          const row = payload.new as TypingRow;
+          if (row.user_id !== userId) setOtherTyping(Boolean(row.is_typing));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [userId, matchId]);
+
+  // Cleanup typing timer
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (userId) void setTyping(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, matchId]);
+
+  const presenceText = isOtherOnline
+    ? "Online now"
+    : getPresenceLabel(otherProfile?.last_seen_at);
 
   return (
     <main className="app-container" style={{ maxWidth: 560 }}>
@@ -424,7 +424,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
         }
       />
 
-      {/* Header line with online status */}
+      {/* Other user's online/last seen */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
         <div
           style={{
@@ -488,7 +488,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
                 openMenuAt(e.clientX, e.clientY, m);
               }}
               onPointerDown={(e) => {
-                // long-press for mobile
+                // long-press opens menu (mobile)
                 if (pressTimerRef.current) window.clearTimeout(pressTimerRef.current);
                 const x = (e as any).clientX ?? 120;
                 const y = (e as any).clientY ?? 120;
@@ -523,7 +523,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
         </button>
       </div>
 
-      {/* Menu */}
+      {/* Simple menu (optional) */}
       {menu.open && menu.msg && (
         <div
           style={{
@@ -538,20 +538,34 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
             display: "grid",
             gap: 8,
             zIndex: 9999,
-            minWidth: 200,
+            minWidth: 220,
           }}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >
-          <button type="button" onClick={() => copyMessage(menu.msg!.body)} disabled={Boolean(menu.msg!.deleted_at)}>
+          <button
+            type="button"
+            onClick={async () => {
+              await navigator.clipboard.writeText(menu.msg!.body);
+              setStatus("Copied ✅");
+              window.setTimeout(() => setStatus(""), 900);
+              closeMenu();
+            }}
+            disabled={Boolean(menu.msg!.deleted_at)}
+          >
             Copy
           </button>
 
-          <button type="button" onClick={() => deleteForEveryone(menu.msg!)} disabled={menu.msg!.sender_id !== userId}>
+          <button
+            type="button"
+            onClick={() => void deleteForEveryone(menu.msg!)}
+            disabled={menu.msg!.sender_id !== userId || Boolean(menu.msg!.deleted_at)}
+            title={menu.msg!.sender_id !== userId ? "Only the sender can delete for everyone" : ""}
+          >
             Delete for everyone
           </button>
 
-          <button type="button" onClick={() => closeMenu()}>
+          <button type="button" onClick={closeMenu}>
             Close
           </button>
         </div>
