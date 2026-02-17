@@ -11,7 +11,6 @@ type DiscoveryRow = {
   bio: string | null;
   location_text: string | null;
   avatar_path: string | null;
-  last_seen_at: string | null; // ✅ added
 };
 
 type ViewProfile = DiscoveryRow & { avatar_signed_url: string | null };
@@ -32,22 +31,6 @@ const FALLBACK_AVATAR =
   </svg>
 `);
 
-function timeAgo(iso: string) {
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return "";
-  const diffMs = Date.now() - t;
-
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
-}
-
 export default function DiscoverPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<ViewProfile[]>([]);
@@ -58,14 +41,10 @@ export default function DiscoverPage() {
   // ✅ prevents double-click / accidental form submit issues
   const [swiping, setSwiping] = useState(false);
 
+  // ✅ Tap card → open profile modal
+  const [openProfile, setOpenProfile] = useState<ViewProfile | null>(null);
+
   const signedUrlCache = useRef<Record<string, string>>({});
-
-  // ✅ online presence (realtime, no DB writes)
-  const [onlineIds, setOnlineIds] = useState<string[]>([]);
-  const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-
-  // ✅ last seen heartbeat interval
-  const heartbeatRef = useRef<number | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -75,57 +54,10 @@ export default function DiscoverPage() {
         return;
       }
       setUserId(data.session.user.id);
-      await loadProfiles(true);
+      await loadProfiles();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // ✅ Presence: track who is online (global channel)
-  useEffect(() => {
-    if (!userId) return;
-
-    const ch = supabase.channel("presence:online", {
-      config: { presence: { key: userId } },
-    });
-
-    ch.on("presence", { event: "sync" }, () => {
-      const state = ch.presenceState() as Record<string, any[]>;
-      setOnlineIds(Object.keys(state));
-    });
-
-    ch.subscribe(async (status) => {
-      if (status === "SUBSCRIBED") {
-        await ch.track({ online: true, t: Date.now() });
-      }
-    });
-
-    presenceChannelRef.current = ch;
-
-    return () => {
-      if (presenceChannelRef.current) supabase.removeChannel(presenceChannelRef.current);
-      presenceChannelRef.current = null;
-    };
-  }, [userId]);
-
-  // ✅ Heartbeat: update my last_seen_at every 60 seconds
-  useEffect(() => {
-    if (!userId) return;
-
-    const ping = async () => {
-      await supabase
-        .from("profiles")
-        .update({ last_seen_at: new Date().toISOString() })
-        .eq("id", userId);
-    };
-
-    ping();
-    heartbeatRef.current = window.setInterval(ping, 60000);
-
-    return () => {
-      if (heartbeatRef.current) window.clearInterval(heartbeatRef.current);
-      heartbeatRef.current = null;
-    };
-  }, [userId]);
 
   async function getSignedAvatarUrl(path: string) {
     if (signedUrlCache.current[path]) return signedUrlCache.current[path];
@@ -145,9 +77,8 @@ export default function DiscoverPage() {
     return out;
   }
 
-  async function loadProfiles(showLoadingStatus = false) {
-    if (showLoadingStatus) setStatus("Loading...");
-
+  async function loadProfiles() {
+    setStatus("Loading...");
     const { data, error } = await supabase.rpc("get_discovery_profiles", { limit_count: 10 });
     if (error) return setStatus(`Error: ${error.message}`);
 
@@ -156,9 +87,7 @@ export default function DiscoverPage() {
 
     setProfiles(list);
     setCurrent(list[0] ?? null);
-
-    // ✅ don’t show “No more profiles.” as status; we render a premium empty state instead
-    setStatus(list.length ? "" : "");
+    setStatus(list.length ? "" : "No more profiles.");
   }
 
   async function swipe(direction: "like" | "pass") {
@@ -188,10 +117,10 @@ export default function DiscoverPage() {
         }
 
         const result = Array.isArray(data) ? data[0] : data;
-        if (result?.matched) setStatus(`It's a match! 🎉`);
+        if (result?.matched) setStatus(`It's a match! match_id: ${result.match_id}`);
         else setStatus("");
 
-        if (remaining.length < 3) loadProfiles(false);
+        if (remaining.length < 3) loadProfiles();
       } finally {
         setSwiping(false);
       }
@@ -208,7 +137,7 @@ export default function DiscoverPage() {
     if (error) return setStatus(`Reset failed: ${error.message}`);
 
     setStatus("Swipes reset ✅ Reloading...");
-    await loadProfiles(true);
+    await loadProfiles();
   }
 
   async function logout() {
@@ -217,34 +146,73 @@ export default function DiscoverPage() {
   }
 
   const photoUrl = current?.avatar_signed_url || FALLBACK_AVATAR;
-  const isCurrentOnline = current ? onlineIds.includes(current.id) : false;
 
   return (
     <main className="app-container">
       <style>{`
-        .card { transition: transform 180ms ease, opacity 180ms ease; will-change: transform, opacity; }
+        .card { transition: transform 180ms ease, opacity 180ms ease; will-change: transform, opacity; cursor: pointer; }
         .card.in { opacity: 1; transform: translateY(0) scale(1); }
         .card.out { opacity: 0; transform: translateY(10px) scale(0.98); }
 
-        .emptyCard{
+        .modalOverlay{
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.48);
+          display: grid;
+          place-items: center;
           padding: 18px;
-          border-radius: 22px;
-          background:
-            radial-gradient(circle at 20% 10%, rgba(255,77,121,0.18), transparent 55%),
-            radial-gradient(circle at 90% 20%, rgba(255,154,60,0.18), transparent 55%),
-            linear-gradient(180deg, var(--card-solid), rgba(238,242,247,0.85));
-          border: 1px solid var(--border);
-          box-shadow: 0 14px 28px rgba(0,0,0,0.10);
-          text-align: center;
+          z-index: 9999;
+          animation: modalFade 140ms ease-out both;
+        }
+        @keyframes modalFade{
+          from { opacity: 0; }
+          to { opacity: 1; }
         }
 
-        .onlineDot{
-          width: 8px;
-          height: 8px;
+        .modalCard{
+          width: min(560px, 100%);
+          border-radius: 22px;
+          overflow: hidden;
+          background: white;
+          border: 1px solid rgba(0,0,0,0.08);
+          box-shadow: 0 24px 70px rgba(0,0,0,0.30);
+          animation: modalPop 170ms ease-out both;
+          transform-origin: 50% 60%;
+        }
+        @keyframes modalPop{
+          from { transform: translateY(8px) scale(0.985); opacity: 0; }
+          to { transform: translateY(0) scale(1); opacity: 1; }
+        }
+
+        .modalHero{
+          height: 320px;
+          background-size: cover;
+          background-position: center;
+          position: relative;
+        }
+        .modalHeroShade{
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.58) 100%);
+        }
+        .modalHeroText{
+          position: absolute;
+          left: 16px;
+          bottom: 14px;
+          color: white;
+        }
+        .chips{
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          margin-top: 10px;
+        }
+        .chip{
+          font-size: 12px;
+          font-weight: 900;
+          padding: 8px 10px;
           border-radius: 999px;
-          background: #22c55e;
-          box-shadow: 0 0 0 3px rgba(34,197,94,0.18);
-          display: inline-block;
+          background: rgba(0,0,0,0.06);
         }
       `}</style>
 
@@ -273,64 +241,19 @@ export default function DiscoverPage() {
         </div>
       )}
 
-      {/* ✅ Premium empty state */}
       {!current ? (
-        <div className="emptyCard">
-          <div
-            style={{
-              width: 58,
-              height: 58,
-              borderRadius: 18,
-              margin: "0 auto 12px auto",
-              display: "grid",
-              placeItems: "center",
-              background: "linear-gradient(135deg, var(--warm1), var(--warm2))",
-              boxShadow: "0 16px 30px rgba(255, 77, 121, 0.20)",
-            }}
-            aria-hidden="true"
-          >
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M12 21s-7-4.5-9.5-9C.2 8.6 2.3 5 6.4 5c2 0 3.4 1 4.6 2.4C12.2 6 13.6 5 15.6 5c4.1 0 6.2 3.6 3.9 7-2.5 4.5-9.5 9-9.5 9z"
-                fill="white"
-                opacity="0.95"
-              />
-            </svg>
-          </div>
-
-          <div style={{ fontWeight: 950, fontSize: 18, letterSpacing: -0.2 }}>You’re all caught up 🎉</div>
-
-          <div style={{ marginTop: 6, fontSize: 13, opacity: 0.75, fontWeight: 700, lineHeight: 1.35 }}>
-            No new profiles match your feed right now. Check again later — or reset your swipes to re-see people.
-          </div>
-
-          <div style={{ display: "flex", gap: 10, marginTop: 14, justifyContent: "center", flexWrap: "wrap" }}>
-            <button
-              className="btn btn-warm"
-              type="button"
-              onClick={() => loadProfiles(true)}
-              style={{ borderRadius: 999, padding: "12px 16px" }}
-            >
-              🔄 Check again
-            </button>
-
-            <button
-              className="btn btn-gray"
-              type="button"
-              onClick={resetMySwipes}
-              style={{ borderRadius: 999, padding: "12px 16px" }}
-            >
-              ♻️ Reset swipes
-            </button>
-          </div>
-
-          <div style={{ marginTop: 10, fontSize: 11, opacity: 0.55, fontWeight: 700 }}>
-            Tip: When more users sign up, they’ll appear after you check again.
-          </div>
-        </div>
+        <button className="btn btn-gray btn-full" type="button" onClick={loadProfiles}>
+          Reload
+        </button>
       ) : (
         <div
           className={`card ${anim}`}
+          role="button"
+          tabIndex={0}
+          onClick={() => setOpenProfile(current)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") setOpenProfile(current);
+          }}
           style={{
             padding: 20,
             borderRadius: 22,
@@ -352,23 +275,9 @@ export default function DiscoverPage() {
             }}
           >
             <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.35) 100%)" }} />
-
             <div style={{ position: "absolute", left: 14, bottom: 12, color: "white" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ fontWeight: 950, fontSize: 20 }}>{current.name ?? "Unnamed"}</div>
-                {isCurrentOnline && <span className="onlineDot" title="Online now" />}
-              </div>
-
-              <div style={{ fontSize: 12, opacity: 0.9 }}>
-                {current.location_text ?? "No location"}
-                {!isCurrentOnline && current.last_seen_at ? (
-                  <>
-                    {" "}
-                    • Last seen {timeAgo(current.last_seen_at)}
-                  </>
-                ) : null}
-                {isCurrentOnline ? <> • Online now</> : null}
-              </div>
+              <div style={{ fontWeight: 950, fontSize: 20 }}>{current.name ?? "Unnamed"}</div>
+              <div style={{ fontSize: 12, opacity: 0.9 }}>{current.location_text ?? "No location"}</div>
             </div>
           </div>
 
@@ -405,8 +314,93 @@ export default function DiscoverPage() {
           </div>
 
           {swiping && (
-            <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65, fontWeight: 800 }}>Saving…</div>
+            <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65, fontWeight: 800 }}>
+              Saving…
+            </div>
           )}
+
+          <div style={{ marginTop: 12, fontSize: 12, opacity: 0.7, fontWeight: 800 }}>
+            Tap card to view full profile
+          </div>
+        </div>
+      )}
+
+      {/* ✅ FULL PROFILE MODAL */}
+      {openProfile && (
+        <div
+          className="modalOverlay"
+          onClick={() => setOpenProfile(null)}
+          aria-modal="true"
+          role="dialog"
+        >
+          <div className="modalCard" onClick={(e) => e.stopPropagation()}>
+            <div
+              className="modalHero"
+              style={{
+                backgroundImage: `url(${openProfile.avatar_signed_url || FALLBACK_AVATAR})`,
+              }}
+            >
+              <div className="modalHeroShade" />
+              <div className="modalHeroText">
+                <div style={{ fontSize: 22, fontWeight: 950 }}>
+                  {openProfile.name ?? "Unnamed"}
+                </div>
+                <div style={{ fontSize: 13, opacity: 0.9 }}>
+                  {openProfile.location_text ?? "No location"}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ padding: 16 }}>
+              <div style={{ fontWeight: 950, marginBottom: 6 }}>About</div>
+              <div style={{ opacity: 0.82, lineHeight: 1.5 }}>
+                {openProfile.bio ?? "No bio yet."}
+              </div>
+
+              {/* Optional nice “chips” (pure UI) */}
+              <div className="chips">
+                <span className="chip">Verified</span>
+                <span className="chip">Photo</span>
+                <span className="chip">Nearby</span>
+              </div>
+
+              <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+                <button
+                  className="btn btn-gray"
+                  style={{ flex: 1, borderRadius: 999 }}
+                  type="button"
+                  disabled={swiping}
+                  onClick={() => {
+                    setOpenProfile(null);
+                    swipe("pass");
+                  }}
+                >
+                  ❌ Pass
+                </button>
+                <button
+                  className="btn btn-warm"
+                  style={{ flex: 1, borderRadius: 999 }}
+                  type="button"
+                  disabled={swiping}
+                  onClick={() => {
+                    setOpenProfile(null);
+                    swipe("like");
+                  }}
+                >
+                  ❤️ Like
+                </button>
+              </div>
+
+              <button
+                className="btn btn-gray"
+                style={{ width: "100%", marginTop: 10, borderRadius: 999 }}
+                type="button"
+                onClick={() => setOpenProfile(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </main>
