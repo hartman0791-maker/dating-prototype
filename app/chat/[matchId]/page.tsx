@@ -90,9 +90,7 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
 
     // ✅ Change A: DO NOT clear body (your table has a check constraint)
     const nowIso = new Date().toISOString();
-    setMessages((prev) =>
-      prev.map((m) => (m.id === msg.id ? { ...m, deleted_at: nowIso } : m))
-    );
+    setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, deleted_at: nowIso } : m)));
 
     setStatus("Deleted ✅");
     setTimeout(() => setStatus(""), 900);
@@ -169,8 +167,9 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
   useEffect(() => {
     if (!userId) return;
     loadMessages();
-  }, [userId]);
+  }, [userId, matchId]);
 
+  // ✅ Realtime: messages
   useEffect(() => {
     if (!userId) return;
 
@@ -184,15 +183,21 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
 
           setMessages((prev) => {
             const exists = prev.some((x) => x.id === m.id);
-            return exists ? prev.map((x) => (x.id === m.id ? { ...x, ...m } : x)) : [...prev, m];
+            return exists
+              ? prev.map((x) => (x.id === m.id ? { ...x, ...m } : x))
+              : [...prev, m];
           });
         }
       )
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
-  }, [userId]);
+    // ✅ FIX: cleanup must return void (NOT a Promise)
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [userId, matchId]);
 
+  // ✅ Realtime: typing
   useEffect(() => {
     if (!userId) return;
 
@@ -208,8 +213,20 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
       )
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
-  }, [userId]);
+    // ✅ FIX: cleanup must return void (NOT a Promise)
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [userId, matchId]);
+
+  // ✅ Cleanup typing timer + setTyping(false) on leave (optional, but nice)
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (userId) void setTyping(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, matchId]);
 
   async function sendMessage() {
     if (!text.trim()) return;
@@ -231,7 +248,10 @@ export default function ChatPage({ params }: { params: { matchId: string } }) {
 
   return (
     <main className="app-container" style={{ maxWidth: 560 }}>
-      <AppHeader title="Chat" right={<button className="btn btn-gray" onClick={logout}>Logout</button>} />
+      <AppHeader
+        title="Chat"
+        right={<button className="btn btn-gray" onClick={logout}>Logout</button>}
+      />
 
       {status && (
         <div style={{ padding: 12, borderRadius: 14, background: "#fff3cd", marginBottom: 12 }}>
