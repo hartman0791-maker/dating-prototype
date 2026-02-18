@@ -111,11 +111,15 @@ export default function DiscoverPage() {
 
   async function getSignedAvatarUrl(path: string) {
     if (signedUrlCache.current[path]) return signedUrlCache.current[path];
-    const { data, error } = await supabase.storage.from("avatars").createSignedUrl(path, 3600);
-    if (error) return null;
-    signedUrlCache.current[path] = data.signedUrl;
-    return data.signedUrl;
-  }
+   const { data, error } = await supabase.rpc("get_discovery_profiles_filtered", {
+  limit_count: 10,
+  min_age: applied.minAge,
+  max_age: 60, // or make it a UI slider too
+  gender_filter: applied.genderFilter === "any" ? null : applied.genderFilter,
+  require_photo: applied.requirePhoto,
+  active_within_mins: applied.activeWithinMins,
+});
+
 
   async function attachSignedUrls(list: DiscoveryRow[]): Promise<ViewProfile[]> {
     const out: ViewProfile[] = [];
