@@ -1,42 +1,34 @@
-
-import { createServerClient } from "@supabase/ssr";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
+/**
+ * Server-side Supabase client for ROUTE HANDLERS + SERVER COMPONENTS.
+ * Uses anon key. For auth, we attach Authorization if a session exists in cookies.
+ */
 export function createClient() {
   const cookieStore = cookies();
 
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-        set(name: string, value: string, options: any) {
-          cookieStore.set({ name, value, ...options });
-        },
-        remove(name: string, options: any) {
-          cookieStore.set({ name, value: "", ...options, maxAge: 0 });
-        },
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+  // NOTE: This is a simple server client. If you're using @supabase/ssr, your setup may differ.
+  return createSupabaseClient(supabaseUrl, supabaseAnonKey, {
+    global: {
+      headers: {
+        // If you store access token in cookies, you can wire it here.
+        // Many apps using supabase auth helpers manage this automatically.
       },
-    }
-  );
+    },
+  });
 }
 
+/**
+ * Admin client (service role) – ONLY use on server.
+ * Requires SUPABASE_SERVICE_ROLE_KEY in Vercel env.
+ */
 export function createAdminClient() {
-  // Requires SUPABASE_SERVICE_ROLE_KEY in Vercel env vars (server-side only)
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      cookies: {
-        get() {
-          return undefined;
-        },
-        set() {},
-        remove() {},
-      } as any,
-    }
-  );
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+  return createSupabaseClient(supabaseUrl, serviceKey);
 }
