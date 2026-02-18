@@ -60,6 +60,7 @@ function calcAge(birthdate?: string | null) {
   if (!birthdate) return null;
   const d = new Date(birthdate);
   if (Number.isNaN(d.getTime())) return null;
+
   const now = new Date();
   let age = now.getFullYear() - d.getFullYear();
   const m = now.getMonth() - d.getMonth();
@@ -71,33 +72,22 @@ export default function DiscoverPage() {
   const { isOnline } = usePresence();
 
   const [userId, setUserId] = useState<string | null>(null);
+  const [allProfiles, setAllProfiles] = useState<ViewProfile[]>([]);
   const [profiles, setProfiles] = useState<ViewProfile[]>([]);
   const [current, setCurrent] = useState<ViewProfile | null>(null);
 
   const [status, setStatus] = useState("");
   const [anim, setAnim] = useState<"in" | "out">("in");
-
   const [loading, setLoading] = useState(false);
   const [swiping, setSwiping] = useState(false);
 
-  // ===== Filters UI =====
+  // Filters UI
   const [filtersOpen, setFiltersOpen] = useState(false);
-
-  // UI values
   const [genderFilter, setGenderFilter] = useState<"any" | "male" | "female" | "other">("any");
   const [minAge, setMinAge] = useState(18);
   const [maxAge, setMaxAge] = useState(60);
-  const [activeWithinMins, setActiveWithinMins] = useState(10080); // 7 days
-  const [requirePhoto, setRequirePhoto] = useState(false); // keep OFF by default
-
-  // Applied values (used by loadProfiles)
-  const [applied, setApplied] = useState({
-    genderFilter: "any" as "any" | "male" | "female" | "other",
-    minAge: 18,
-    maxAge: 60,
-    activeWithinMins: 10080,
-    requirePhoto: false,
-  });
+  const [activeWithinMins, setActiveWithinMins] = useState(10080);
+  const [requirePhoto, setRequirePhoto] = useState(false);
 
   const signedUrlCache = useRef<Record<string, string>>({});
 
@@ -134,21 +124,42 @@ export default function DiscoverPage() {
     return out;
   }
 
-  // ===== Apply / Clear filters =====
-  function applyFilters() {
+  function applyFiltersToList(list: ViewProfile[]) {
+    const genderArg = genderFilter === "any" ? null : genderFilter;
     const mn = Math.min(minAge, maxAge);
     const mx = Math.max(minAge, maxAge);
 
-    setApplied({
-      genderFilter,
-      minAge: mn,
-      maxAge: mx,
-      activeWithinMins,
-      requirePhoto,
+    let filtered = [...list];
+
+    if (requirePhoto) filtered = filtered.filter((p) => !!p.avatar_path);
+
+    if (genderArg) {
+      filtered = filtered.filter((p) => (p.gender || "").toLowerCase() === genderArg.toLowerCase());
+    }
+
+    filtered = filtered.filter((p) => {
+      const age = calcAge(p.birthdate ?? null);
+      if (age === null) return true;
+      return age >= mn && age <= mx;
     });
 
+    if (activeWithinMins && activeWithinMins > 0) {
+      const cutoff = Date.now() - activeWithinMins * 60_000;
+      filtered = filtered.filter((p) => {
+        if (!p.last_seen_at) return true;
+        return new Date(p.last_seen_at).getTime() >= cutoff;
+      });
+    }
+
+    return filtered;
+  }
+
+  function applyFilters() {
+    const filtered = applyFiltersToList(allProfiles);
+    setProfiles(filtered);
+    setCurrent(filtered[0] ?? null);
+    setStatus(filtered.length ? "" : "No more profiles.");
     setFiltersOpen(false);
-    void loadProfiles();
   }
 
   function clearFilters() {
@@ -157,70 +168,24 @@ export default function DiscoverPage() {
     setMaxAge(60);
     setActiveWithinMins(10080);
     setRequirePhoto(false);
+
+    // Reset to full list immediately
+    setProfiles(allProfiles);
+    setCurrent(allProfiles[0] ?? null);
+    setStatus(allProfiles.length ? "" : "No more profiles.");
   }
 
-  // ===== Load profiles (tries filtered RPC first, falls back safely) =====
   async function loadProfiles() {
     setLoading(true);
     setStatus("");
 
     try {
-      const genderArg = applied.genderFilter === "any" ? null : applied.genderFilter;
-
-      // 1) Try filtered function (if you created it)
-      let data: any = null;
-      let error: any = null;
-
-      const res1 = await supabase.rpc("get_discovery_profiles_filtered", {
-        limit_count: 10,
-        min_age: applied.minAge,
-        max_age: applied.maxAge,
-        gender_filter: genderArg,
-        require_photo: applied.requirePhoto,
-        active_within_mins: applied.activeWithinMins,
-      });
-
-      data = res1.data;
-      error = res1.error;
-
-      // 2) Fallback to your existing function if filtered function isn't available
-      if (error && String(error.message || "").includes("schema cache")) {
-        const res2 = await supabase.rpc("get_discovery_profiles", { limit_count: 10 });
-        data = res2.data;
-        error = res2.error;
-
-        // If we fallback, apply filters in the client (best-effort)
-        if (!error) {
-          let raw = (data ?? []) as DiscoveryRow[];
-
-          // require photo
-          if (applied.requirePhoto) raw = raw.filter((p) => !!p.avatar_path);
-
-          // gender
-          if (genderArg) raw = raw.filter((p) => (p.gender || "").toLowerCase() === String(genderArg).toLowerCase());
-
-          // age
-          raw = raw.filter((p) => {
-            const age = calcAge(p.birthdate ?? null);
-            if (age === null) return true; // don't hide users with missing birthdate
-            return age >= applied.minAge && age <= applied.maxAge;
-          });
-
-          // active within mins (needs last_seen_at)
-          if (applied.activeWithinMins && applied.activeWithinMins > 0) {
-            const cutoff = Date.now() - applied.activeWithinMins * 60_000;
-            raw = raw.filter((p) => {
-              if (!p.last_seen_at) return true; // don't hide if missing
-              return new Date(p.last_seen_at).getTime() >= cutoff;
-            });
-          }
-
-          data = raw;
-        }
-      }
+      // ✅ ONLY call the stable RPC
+      const { data, error } = await supabase.rpc("get_discovery_profiles", { limit_count: 10 });
 
       if (error) {
         setStatus(`Error: ${error.message}`);
+        setAllProfiles([]);
         setProfiles([]);
         setCurrent(null);
         return;
@@ -229,9 +194,13 @@ export default function DiscoverPage() {
       const raw = (data ?? []) as DiscoveryRow[];
       const list = await attachSignedUrls(raw);
 
-      setProfiles(list);
-      setCurrent(list[0] ?? null);
-      setStatus(list.length ? "" : "No more profiles.");
+      setAllProfiles(list);
+
+      // Apply current UI filter state to the loaded list
+      const filtered = applyFiltersToList(list);
+      setProfiles(filtered);
+      setCurrent(filtered[0] ?? null);
+      setStatus(filtered.length ? "" : "No more profiles.");
     } finally {
       setLoading(false);
     }
@@ -438,7 +407,6 @@ export default function DiscoverPage() {
           >
             <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.35) 100%)" }} />
 
-            {/* Online / Last seen badge */}
             <div
               style={{
                 position: "absolute",
