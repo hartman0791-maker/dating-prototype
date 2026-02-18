@@ -14,7 +14,7 @@ type DiscoveryRow = {
   avatar_path: string | null;
   last_seen_at?: string | null;
   gender?: string | null;
-  birthdate?: string | null; // comes back as string from Supabase
+  birthdate?: string | null; // Supabase returns dates as strings in JS
 };
 
 type ViewProfile = DiscoveryRow & { avatar_signed_url: string | null };
@@ -60,6 +60,7 @@ function calcAge(birthdate?: string | null) {
   if (!birthdate) return null;
   const d = new Date(birthdate);
   if (Number.isNaN(d.getTime())) return null;
+
   const now = new Date();
   let age = now.getFullYear() - d.getFullYear();
   const m = now.getMonth() - d.getMonth();
@@ -71,6 +72,7 @@ export default function DiscoverPage() {
   const { isOnline } = usePresence();
 
   const [userId, setUserId] = useState<string | null>(null);
+
   const [profiles, setProfiles] = useState<ViewProfile[]>([]);
   const [current, setCurrent] = useState<ViewProfile | null>(null);
 
@@ -79,17 +81,19 @@ export default function DiscoverPage() {
   const [loading, setLoading] = useState(false);
   const [swiping, setSwiping] = useState(false);
 
-  // ✅ Filter UI state
+  // Filters UI
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [genderFilter, setGenderFilter] = useState<string>("any"); // any | male | female | other
   const [minAge, setMinAge] = useState<number>(18);
-  const [activeWithinMins, setActiveWithinMins] = useState<number>(1440); // 24h default
+  const [maxAge, setMaxAge] = useState<number>(60);
+  const [activeWithinMins, setActiveWithinMins] = useState<number>(1440);
   const [requirePhoto, setRequirePhoto] = useState<boolean>(true);
 
-  // Applied filters (only change when user hits Apply)
+  // Applied filters (only change when user clicks Apply)
   const [applied, setApplied] = useState({
     genderFilter: "any",
     minAge: 18,
+    maxAge: 60,
     activeWithinMins: 1440,
     requirePhoto: true,
   });
@@ -99,27 +103,26 @@ export default function DiscoverPage() {
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
-      if (!data.session) {
+      const uid = data.session?.user.id ?? null;
+
+      if (!uid) {
         window.location.href = "/login";
         return;
       }
-      setUserId(data.session.user.id);
-      await loadProfiles(); // loads with defaults
+
+      setUserId(uid);
+      await loadProfiles();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function getSignedAvatarUrl(path: string) {
     if (signedUrlCache.current[path]) return signedUrlCache.current[path];
-   const { data, error } = await supabase.rpc("get_discovery_profiles_filtered", {
-  limit_count: 10,
-  min_age: applied.minAge,
-  max_age: 60, // or make it a UI slider too
-  gender_filter: applied.genderFilter === "any" ? null : applied.genderFilter,
-  require_photo: applied.requirePhoto,
-  active_within_mins: applied.activeWithinMins,
-});
-
+    const { data, error } = await supabase.storage.from("avatars").createSignedUrl(path, 3600);
+    if (error) return null;
+    signedUrlCache.current[path] = data.signedUrl;
+    return data.signedUrl;
+  }
 
   async function attachSignedUrls(list: DiscoveryRow[]): Promise<ViewProfile[]> {
     const out: ViewProfile[] = [];
@@ -131,19 +134,21 @@ export default function DiscoverPage() {
     return out;
   }
 
-  // ✅ Loads using applied filters
   async function loadProfiles() {
     setLoading(true);
     setStatus("");
 
     const genderArg = applied.genderFilter === "any" ? null : applied.genderFilter;
 
+    // ✅ Uses the function signature you kept:
+    // (limit_count, min_age, max_age, gender_filter, require_photo, active_within_mins)
     const { data, error } = await supabase.rpc("get_discovery_profiles_filtered", {
       limit_count: 10,
-      active_within_mins: applied.activeWithinMins,
+      min_age: applied.minAge,
+      max_age: applied.maxAge,
       gender_filter: genderArg,
       require_photo: applied.requirePhoto,
-      min_age: applied.minAge,
+      active_within_mins: applied.activeWithinMins,
     });
 
     if (error) {
@@ -167,10 +172,11 @@ export default function DiscoverPage() {
     setSwiping(true);
     setAnim("out");
 
-    setTimeout(async () => {
+    window.setTimeout(async () => {
       try {
         const targetId = current.id;
 
+        // Move UI forward immediately
         const remaining = profiles.slice(1);
         setProfiles(remaining);
         setCurrent(remaining[0] ?? null);
@@ -187,7 +193,7 @@ export default function DiscoverPage() {
         }
 
         const result = Array.isArray(data) ? data[0] : data;
-        if (result?.matched) setStatus(`It's a match! 🎉`);
+        if (result?.matched) setStatus("It's a match! 🎉");
         else setStatus("");
 
         if (remaining.length < 3) void loadProfiles();
@@ -215,19 +221,19 @@ export default function DiscoverPage() {
     window.location.href = "/login";
   }
 
-  const photoUrl = current?.avatar_signed_url || FALLBACK_AVATAR;
-  const online = current ? isOnline(current.id) : false;
-  const label = online ? "Online now" : formatActiveLabel(current?.last_seen_at ?? null);
-
-  const age = useMemo(() => calcAge(current?.birthdate ?? null), [current?.birthdate]);
-
   function applyFilters() {
+    // Normalize min/max
+    const mn = Math.min(minAge, maxAge);
+    const mx = Math.max(minAge, maxAge);
+
     setApplied({
       genderFilter,
-      minAge,
+      minAge: mn,
+      maxAge: mx,
       activeWithinMins,
       requirePhoto,
     });
+
     setFiltersOpen(false);
     void loadProfiles();
   }
@@ -235,9 +241,15 @@ export default function DiscoverPage() {
   function clearFilters() {
     setGenderFilter("any");
     setMinAge(18);
+    setMaxAge(60);
     setActiveWithinMins(1440);
     setRequirePhoto(true);
   }
+
+  const photoUrl = current?.avatar_signed_url || FALLBACK_AVATAR;
+  const online = current ? isOnline(current.id) : false;
+  const label = online ? "Online now" : formatActiveLabel(current?.last_seen_at ?? null);
+  const age = useMemo(() => calcAge(current?.birthdate ?? null), [current?.birthdate]);
 
   return (
     <main className="app-container">
@@ -269,7 +281,7 @@ export default function DiscoverPage() {
         }
       />
 
-      {/* ✅ Filter panel */}
+      {/* Filter panel */}
       {filtersOpen && (
         <div
           style={{
@@ -284,7 +296,6 @@ export default function DiscoverPage() {
           <div style={{ fontWeight: 950, marginBottom: 10 }}>Filters</div>
 
           <div style={{ display: "grid", gap: 10 }}>
-            {/* Gender */}
             <div style={{ display: "grid", gap: 6 }}>
               <div style={{ fontSize: 13, fontWeight: 900, opacity: 0.85 }}>Gender</div>
               <select
@@ -299,19 +310,16 @@ export default function DiscoverPage() {
               </select>
             </div>
 
-            {/* Min age */}
             <div style={{ display: "grid", gap: 6 }}>
-              <div style={{ fontSize: 13, fontWeight: 900, opacity: 0.85 }}>Minimum age: {minAge}</div>
-              <input
-                type="range"
-                min={18}
-                max={60}
-                value={minAge}
-                onChange={(e) => setMinAge(parseInt(e.target.value, 10))}
-              />
+              <div style={{ fontSize: 13, fontWeight: 900, opacity: 0.85 }}>Min age: {minAge}</div>
+              <input type="range" min={18} max={60} value={minAge} onChange={(e) => setMinAge(parseInt(e.target.value, 10))} />
             </div>
 
-            {/* Active within */}
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontSize: 13, fontWeight: 900, opacity: 0.85 }}>Max age: {maxAge}</div>
+              <input type="range" min={18} max={80} value={maxAge} onChange={(e) => setMaxAge(parseInt(e.target.value, 10))} />
+            </div>
+
             <div style={{ display: "grid", gap: 6 }}>
               <div style={{ fontSize: 13, fontWeight: 900, opacity: 0.85 }}>
                 Active within:{" "}
@@ -334,7 +342,6 @@ export default function DiscoverPage() {
               </select>
             </div>
 
-            {/* Require photo */}
             <label style={{ display: "flex", gap: 10, alignItems: "center", fontWeight: 900, fontSize: 13, opacity: 0.9 }}>
               <input type="checkbox" checked={requirePhoto} onChange={(e) => setRequirePhoto(e.target.checked)} />
               Require photo
@@ -358,7 +365,7 @@ export default function DiscoverPage() {
         </div>
       )}
 
-      {/* Skeleton */}
+      {/* Skeleton loader */}
       {loading && !current ? (
         <div style={{ padding: 20, borderRadius: 22, background: "var(--card-solid)", border: "1px solid var(--border)" }}>
           <div style={{ height: 260, borderRadius: 18, background: "rgba(0,0,0,0.08)", marginBottom: 16 }} />
@@ -395,7 +402,6 @@ export default function DiscoverPage() {
           >
             <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.35) 100%)" }} />
 
-            {/* Status badge */}
             <div
               style={{
                 position: "absolute",
