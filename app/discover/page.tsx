@@ -1,7 +1,7 @@
 "use client";
 export {};
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import AppHeader from "../../components/AppHeader";
 import { usePresence } from "../../components/PresenceProvider";
@@ -13,6 +13,8 @@ type DiscoveryRow = {
   location_text: string | null;
   avatar_path: string | null;
   last_seen_at?: string | null;
+  gender?: string | null;
+  birthdate?: string | null; // comes back as string from Supabase
 };
 
 type ViewProfile = DiscoveryRow & { avatar_signed_url: string | null };
@@ -54,6 +56,17 @@ function formatActiveLabel(lastSeen?: string | null) {
   return `Active ${new Date(lastSeen).toLocaleDateString()}`;
 }
 
+function calcAge(birthdate?: string | null) {
+  if (!birthdate) return null;
+  const d = new Date(birthdate);
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  const m = now.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
+  return age;
+}
+
 export default function DiscoverPage() {
   const { isOnline } = usePresence();
 
@@ -63,9 +76,23 @@ export default function DiscoverPage() {
 
   const [status, setStatus] = useState("");
   const [anim, setAnim] = useState<"in" | "out">("in");
-
   const [loading, setLoading] = useState(false);
   const [swiping, setSwiping] = useState(false);
+
+  // ✅ Filter UI state
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [genderFilter, setGenderFilter] = useState<string>("any"); // any | male | female | other
+  const [minAge, setMinAge] = useState<number>(18);
+  const [activeWithinMins, setActiveWithinMins] = useState<number>(1440); // 24h default
+  const [requirePhoto, setRequirePhoto] = useState<boolean>(true);
+
+  // Applied filters (only change when user hits Apply)
+  const [applied, setApplied] = useState({
+    genderFilter: "any",
+    minAge: 18,
+    activeWithinMins: 1440,
+    requirePhoto: true,
+  });
 
   const signedUrlCache = useRef<Record<string, string>>({});
 
@@ -77,7 +104,7 @@ export default function DiscoverPage() {
         return;
       }
       setUserId(data.session.user.id);
-      await loadProfiles();
+      await loadProfiles(); // loads with defaults
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -100,13 +127,20 @@ export default function DiscoverPage() {
     return out;
   }
 
+  // ✅ Loads using applied filters
   async function loadProfiles() {
     setLoading(true);
     setStatus("");
 
-    // Make sure your RPC returns last_seen_at if you want “Active X ago”.
-    // If it doesn’t, you’ll still get Online now via presence, but offline time will be generic.
-    const { data, error } = await supabase.rpc("get_discovery_profiles", { limit_count: 10 });
+    const genderArg = applied.genderFilter === "any" ? null : applied.genderFilter;
+
+    const { data, error } = await supabase.rpc("get_discovery_profiles_filtered", {
+      limit_count: 10,
+      active_within_mins: applied.activeWithinMins,
+      gender_filter: genderArg,
+      require_photo: applied.requirePhoto,
+      min_age: applied.minAge,
+    });
 
     if (error) {
       setLoading(false);
@@ -178,9 +212,28 @@ export default function DiscoverPage() {
   }
 
   const photoUrl = current?.avatar_signed_url || FALLBACK_AVATAR;
-
   const online = current ? isOnline(current.id) : false;
   const label = online ? "Online now" : formatActiveLabel(current?.last_seen_at ?? null);
+
+  const age = useMemo(() => calcAge(current?.birthdate ?? null), [current?.birthdate]);
+
+  function applyFilters() {
+    setApplied({
+      genderFilter,
+      minAge,
+      activeWithinMins,
+      requirePhoto,
+    });
+    setFiltersOpen(false);
+    void loadProfiles();
+  }
+
+  function clearFilters() {
+    setGenderFilter("any");
+    setMinAge(18);
+    setActiveWithinMins(1440);
+    setRequirePhoto(true);
+  }
 
   return (
     <main className="app-container">
@@ -193,6 +246,9 @@ export default function DiscoverPage() {
       <AppHeader
         right={
           <>
+            <button className="btn btn-gray" type="button" onClick={() => setFiltersOpen((v) => !v)}>
+              ⚙️ Filters
+            </button>
             <button className="btn btn-gray" type="button" onClick={() => (window.location.href = "/matches")}>
               💬 Matches
             </button>
@@ -209,12 +265,96 @@ export default function DiscoverPage() {
         }
       />
 
+      {/* ✅ Filter panel */}
+      {filtersOpen && (
+        <div
+          style={{
+            marginBottom: 12,
+            padding: 14,
+            borderRadius: 18,
+            border: "1px solid var(--border)",
+            background: "var(--card-solid)",
+            boxShadow: "0 16px 40px rgba(0,0,0,0.08)",
+          }}
+        >
+          <div style={{ fontWeight: 950, marginBottom: 10 }}>Filters</div>
+
+          <div style={{ display: "grid", gap: 10 }}>
+            {/* Gender */}
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontSize: 13, fontWeight: 900, opacity: 0.85 }}>Gender</div>
+              <select
+                value={genderFilter}
+                onChange={(e) => setGenderFilter(e.target.value)}
+                style={{ padding: 12, borderRadius: 14, border: "1px solid rgba(0,0,0,0.12)" }}
+              >
+                <option value="any">Any</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            {/* Min age */}
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontSize: 13, fontWeight: 900, opacity: 0.85 }}>Minimum age: {minAge}</div>
+              <input
+                type="range"
+                min={18}
+                max={60}
+                value={minAge}
+                onChange={(e) => setMinAge(parseInt(e.target.value, 10))}
+              />
+            </div>
+
+            {/* Active within */}
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontSize: 13, fontWeight: 900, opacity: 0.85 }}>
+                Active within:{" "}
+                {activeWithinMins <= 60
+                  ? `${activeWithinMins} min`
+                  : activeWithinMins < 1440
+                  ? `${Math.round(activeWithinMins / 60)} hr`
+                  : `${Math.round(activeWithinMins / 1440)} day`}
+              </div>
+              <select
+                value={activeWithinMins}
+                onChange={(e) => setActiveWithinMins(parseInt(e.target.value, 10))}
+                style={{ padding: 12, borderRadius: 14, border: "1px solid rgba(0,0,0,0.12)" }}
+              >
+                <option value={10}>10 min</option>
+                <option value={60}>1 hour</option>
+                <option value={240}>4 hours</option>
+                <option value={1440}>24 hours</option>
+                <option value={10080}>7 days</option>
+              </select>
+            </div>
+
+            {/* Require photo */}
+            <label style={{ display: "flex", gap: 10, alignItems: "center", fontWeight: 900, fontSize: 13, opacity: 0.9 }}>
+              <input type="checkbox" checked={requirePhoto} onChange={(e) => setRequirePhoto(e.target.checked)} />
+              Require photo
+            </label>
+
+            <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+              <button className="btn btn-gray" type="button" onClick={clearFilters} style={{ flex: 1 }}>
+                Clear
+              </button>
+              <button className="btn btn-warm" type="button" onClick={applyFilters} style={{ flex: 1 }}>
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {status && (
         <div style={{ padding: 12, borderRadius: 14, background: "rgba(255, 244, 235, 0.85)", marginBottom: 12 }}>
           {status}
         </div>
       )}
 
+      {/* Skeleton */}
       {loading && !current ? (
         <div style={{ padding: 20, borderRadius: 22, background: "var(--card-solid)", border: "1px solid var(--border)" }}>
           <div style={{ height: 260, borderRadius: 18, background: "rgba(0,0,0,0.08)", marginBottom: 16 }} />
@@ -251,7 +391,7 @@ export default function DiscoverPage() {
           >
             <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.35) 100%)" }} />
 
-            {/* ✅ Online / Last seen badge */}
+            {/* Status badge */}
             <div
               style={{
                 position: "absolute",
@@ -280,7 +420,9 @@ export default function DiscoverPage() {
             </div>
 
             <div style={{ position: "absolute", left: 14, bottom: 12, color: "white" }}>
-              <div style={{ fontWeight: 950, fontSize: 20 }}>{current.name ?? "Unnamed"}</div>
+              <div style={{ fontWeight: 950, fontSize: 20 }}>
+                {current.name ?? "Unnamed"}{age ? `, ${age}` : ""}
+              </div>
               <div style={{ fontSize: 12, opacity: 0.9 }}>{current.location_text ?? "No location"}</div>
             </div>
           </div>
@@ -322,4 +464,4 @@ export default function DiscoverPage() {
       )}
     </main>
   );
-)
+}
