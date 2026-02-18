@@ -14,7 +14,7 @@ type DiscoveryRow = {
   avatar_path: string | null;
   last_seen_at?: string | null;
   gender?: string | null;
-  birthdate?: string | null; // Supabase returns dates as strings in JS
+  birthdate?: string | null; // dates come back as strings in JS
 };
 
 type ViewProfile = DiscoveryRow & { avatar_signed_url: string | null };
@@ -78,24 +78,25 @@ export default function DiscoverPage() {
 
   const [status, setStatus] = useState("");
   const [anim, setAnim] = useState<"in" | "out">("in");
+
   const [loading, setLoading] = useState(false);
   const [swiping, setSwiping] = useState(false);
 
   // Filters UI
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [genderFilter, setGenderFilter] = useState<string>("any"); // any | male | female | other
+  const [genderFilter, setGenderFilter] = useState<string>("any");
   const [minAge, setMinAge] = useState<number>(18);
   const [maxAge, setMaxAge] = useState<number>(60);
-  const [activeWithinMins, setActiveWithinMins] = useState<number>(1440);
-  const [requirePhoto, setRequirePhoto] = useState<boolean>(true);
+  const [activeWithinMins, setActiveWithinMins] = useState<number>(10080); // 7 days default (less strict)
+  const [requirePhoto, setRequirePhoto] = useState<boolean>(false); // ✅ IMPORTANT: OFF by default
 
-  // Applied filters (only change when user clicks Apply)
+  // Applied filters (only change when Apply clicked)
   const [applied, setApplied] = useState({
     genderFilter: "any",
     minAge: 18,
     maxAge: 60,
-    activeWithinMins: 1440,
-    requirePhoto: true,
+    activeWithinMins: 10080,
+    requirePhoto: false, // ✅ OFF by default
   });
 
   const signedUrlCache = useRef<Record<string, string>>({});
@@ -118,8 +119,14 @@ export default function DiscoverPage() {
 
   async function getSignedAvatarUrl(path: string) {
     if (signedUrlCache.current[path]) return signedUrlCache.current[path];
+
     const { data, error } = await supabase.storage.from("avatars").createSignedUrl(path, 3600);
-    if (error) return null;
+
+    if (error) {
+      console.log("[avatar signed url error]", { path, message: error.message });
+      return null;
+    }
+
     signedUrlCache.current[path] = data.signedUrl;
     return data.signedUrl;
   }
@@ -140,9 +147,11 @@ export default function DiscoverPage() {
 
     const genderArg = applied.genderFilter === "any" ? null : applied.genderFilter;
 
-    // ✅ Uses the function signature you kept:
-    // (limit_count, min_age, max_age, gender_filter, require_photo, active_within_mins)
-    const { data, error } = await supabase.rpc("get_discovery_profiles_filtered", {
+    // ✅ Try filtered function first
+    let data: any = null;
+    let error: any = null;
+
+    const filtered = await supabase.rpc("get_discovery_profiles_filtered", {
       limit_count: 10,
       min_age: applied.minAge,
       max_age: applied.maxAge,
@@ -150,6 +159,16 @@ export default function DiscoverPage() {
       require_photo: applied.requirePhoto,
       active_within_mins: applied.activeWithinMins,
     });
+
+    data = filtered.data;
+    error = filtered.error;
+
+    // ✅ Fallback to old function if filtered isn’t available
+    if (error && String(error.message || "").includes("schema cache")) {
+      const fallback = await supabase.rpc("get_discovery_profiles", { limit_count: 10 });
+      data = fallback.data;
+      error = fallback.error;
+    }
 
     if (error) {
       setLoading(false);
@@ -162,7 +181,15 @@ export default function DiscoverPage() {
 
     setProfiles(list);
     setCurrent(list[0] ?? null);
-    setStatus(list.length ? "" : "No more profiles.");
+
+    if (!list.length) {
+      setStatus(
+        "No more profiles. Tip: turn OFF filters (Require photo / Active within) or create a second test account."
+      );
+    } else {
+      setStatus("");
+    }
+
     setLoading(false);
   }
 
@@ -216,13 +243,7 @@ export default function DiscoverPage() {
     await loadProfiles();
   }
 
-  async function logout() {
-    await supabase.auth.signOut();
-    window.location.href = "/login";
-  }
-
   function applyFilters() {
-    // Normalize min/max
     const mn = Math.min(minAge, maxAge);
     const mx = Math.max(minAge, maxAge);
 
@@ -242,8 +263,13 @@ export default function DiscoverPage() {
     setGenderFilter("any");
     setMinAge(18);
     setMaxAge(60);
-    setActiveWithinMins(1440);
-    setRequirePhoto(true);
+    setActiveWithinMins(10080);
+    setRequirePhoto(false);
+  }
+
+  async function logout() {
+    await supabase.auth.signOut();
+    window.location.href = "/login";
   }
 
   const photoUrl = current?.avatar_signed_url || FALLBACK_AVATAR;
@@ -262,6 +288,9 @@ export default function DiscoverPage() {
       <AppHeader
         right={
           <>
+            <button className="btn btn-gray" type="button" onClick={() => (window.location.href = "/discover")}>
+              🔥 Discover
+            </button>
             <button className="btn btn-gray" type="button" onClick={() => setFiltersOpen((v) => !v)}>
               ⚙️ Filters
             </button>
@@ -281,7 +310,6 @@ export default function DiscoverPage() {
         }
       />
 
-      {/* Filter panel */}
       {filtersOpen && (
         <div
           style={{
@@ -344,7 +372,7 @@ export default function DiscoverPage() {
 
             <label style={{ display: "flex", gap: 10, alignItems: "center", fontWeight: 900, fontSize: 13, opacity: 0.9 }}>
               <input type="checkbox" checked={requirePhoto} onChange={(e) => setRequirePhoto(e.target.checked)} />
-              Require photo
+              Require photo (can hide everyone if nobody uploaded)
             </label>
 
             <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
@@ -365,7 +393,6 @@ export default function DiscoverPage() {
         </div>
       )}
 
-      {/* Skeleton loader */}
       {loading && !current ? (
         <div style={{ padding: 20, borderRadius: 22, background: "var(--card-solid)", border: "1px solid var(--border)" }}>
           <div style={{ height: 260, borderRadius: 18, background: "rgba(0,0,0,0.08)", marginBottom: 16 }} />
