@@ -13,6 +13,8 @@ type DiscoveryRow = {
   location_text: string | null;
   avatar_path: string | null;
   last_seen_at?: string | null;
+  birthdate?: string | null;
+  gender?: string | null;
 };
 
 type ViewProfile = DiscoveryRow & { avatar_signed_url: string | null };
@@ -34,7 +36,7 @@ const FALLBACK_AVATAR =
 `);
 
 function formatActiveLabel(lastSeen?: string | null) {
-  if (!lastSeen) return "Offline";
+  if (!lastSeen) return "Offline recently";
 
   const last = new Date(lastSeen).getTime();
   const now = Date.now();
@@ -54,6 +56,17 @@ function formatActiveLabel(lastSeen?: string | null) {
   return `Active ${new Date(lastSeen).toLocaleDateString()}`;
 }
 
+function calcAge(birthdate?: string | null) {
+  if (!birthdate) return null;
+  const d = new Date(birthdate);
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  const m = now.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
+  return age;
+}
+
 export default function DiscoverPage() {
   const { isOnline } = usePresence();
 
@@ -66,6 +79,25 @@ export default function DiscoverPage() {
 
   const [loading, setLoading] = useState(false);
   const [swiping, setSwiping] = useState(false);
+
+  // ===== Filters UI =====
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  // UI values
+  const [genderFilter, setGenderFilter] = useState<"any" | "male" | "female" | "other">("any");
+  const [minAge, setMinAge] = useState(18);
+  const [maxAge, setMaxAge] = useState(60);
+  const [activeWithinMins, setActiveWithinMins] = useState(10080); // 7 days
+  const [requirePhoto, setRequirePhoto] = useState(false); // keep OFF by default
+
+  // Applied values (used by loadProfiles)
+  const [applied, setApplied] = useState({
+    genderFilter: "any" as "any" | "male" | "female" | "other",
+    minAge: 18,
+    maxAge: 60,
+    activeWithinMins: 10080,
+    requirePhoto: false,
+  });
 
   const signedUrlCache = useRef<Record<string, string>>({});
 
@@ -84,8 +116,10 @@ export default function DiscoverPage() {
 
   async function getSignedAvatarUrl(path: string) {
     if (signedUrlCache.current[path]) return signedUrlCache.current[path];
+
     const { data, error } = await supabase.storage.from("avatars").createSignedUrl(path, 3600);
     if (error) return null;
+
     signedUrlCache.current[path] = data.signedUrl;
     return data.signedUrl;
   }
@@ -100,27 +134,107 @@ export default function DiscoverPage() {
     return out;
   }
 
+  // ===== Apply / Clear filters =====
+  function applyFilters() {
+    const mn = Math.min(minAge, maxAge);
+    const mx = Math.max(minAge, maxAge);
+
+    setApplied({
+      genderFilter,
+      minAge: mn,
+      maxAge: mx,
+      activeWithinMins,
+      requirePhoto,
+    });
+
+    setFiltersOpen(false);
+    void loadProfiles();
+  }
+
+  function clearFilters() {
+    setGenderFilter("any");
+    setMinAge(18);
+    setMaxAge(60);
+    setActiveWithinMins(10080);
+    setRequirePhoto(false);
+  }
+
+  // ===== Load profiles (tries filtered RPC first, falls back safely) =====
   async function loadProfiles() {
     setLoading(true);
     setStatus("");
 
-    // Make sure your RPC returns last_seen_at if you want “Active X ago”.
-    // If it doesn’t, you’ll still get Online now via presence, but offline time will be generic.
-    const { data, error } = await supabase.rpc("get_discovery_profiles", { limit_count: 10 });
+    try {
+      const genderArg = applied.genderFilter === "any" ? null : applied.genderFilter;
 
-    if (error) {
+      // 1) Try filtered function (if you created it)
+      let data: any = null;
+      let error: any = null;
+
+      const res1 = await supabase.rpc("get_discovery_profiles_filtered", {
+        limit_count: 10,
+        min_age: applied.minAge,
+        max_age: applied.maxAge,
+        gender_filter: genderArg,
+        require_photo: applied.requirePhoto,
+        active_within_mins: applied.activeWithinMins,
+      });
+
+      data = res1.data;
+      error = res1.error;
+
+      // 2) Fallback to your existing function if filtered function isn't available
+      if (error && String(error.message || "").includes("schema cache")) {
+        const res2 = await supabase.rpc("get_discovery_profiles", { limit_count: 10 });
+        data = res2.data;
+        error = res2.error;
+
+        // If we fallback, apply filters in the client (best-effort)
+        if (!error) {
+          let raw = (data ?? []) as DiscoveryRow[];
+
+          // require photo
+          if (applied.requirePhoto) raw = raw.filter((p) => !!p.avatar_path);
+
+          // gender
+          if (genderArg) raw = raw.filter((p) => (p.gender || "").toLowerCase() === String(genderArg).toLowerCase());
+
+          // age
+          raw = raw.filter((p) => {
+            const age = calcAge(p.birthdate ?? null);
+            if (age === null) return true; // don't hide users with missing birthdate
+            return age >= applied.minAge && age <= applied.maxAge;
+          });
+
+          // active within mins (needs last_seen_at)
+          if (applied.activeWithinMins && applied.activeWithinMins > 0) {
+            const cutoff = Date.now() - applied.activeWithinMins * 60_000;
+            raw = raw.filter((p) => {
+              if (!p.last_seen_at) return true; // don't hide if missing
+              return new Date(p.last_seen_at).getTime() >= cutoff;
+            });
+          }
+
+          data = raw;
+        }
+      }
+
+      if (error) {
+        setStatus(`Error: ${error.message}`);
+        setProfiles([]);
+        setCurrent(null);
+        return;
+      }
+
+      const raw = (data ?? []) as DiscoveryRow[];
+      const list = await attachSignedUrls(raw);
+
+      setProfiles(list);
+      setCurrent(list[0] ?? null);
+      setStatus(list.length ? "" : "No more profiles.");
+    } finally {
       setLoading(false);
-      setStatus(`Error: ${error.message}`);
-      return;
     }
-
-    const raw = (data ?? []) as DiscoveryRow[];
-    const list = await attachSignedUrls(raw);
-
-    setProfiles(list);
-    setCurrent(list[0] ?? null);
-    setStatus(list.length ? "" : "No more profiles.");
-    setLoading(false);
   }
 
   async function swipe(direction: "like" | "pass") {
@@ -133,6 +247,7 @@ export default function DiscoverPage() {
       try {
         const targetId = current.id;
 
+        // move UI forward immediately
         const remaining = profiles.slice(1);
         setProfiles(remaining);
         setCurrent(remaining[0] ?? null);
@@ -149,7 +264,7 @@ export default function DiscoverPage() {
         }
 
         const result = Array.isArray(data) ? data[0] : data;
-        if (result?.matched) setStatus(`It's a match! 🎉`);
+        if (result?.matched) setStatus("It's a match! 🎉");
         else setStatus("");
 
         if (remaining.length < 3) void loadProfiles();
@@ -178,7 +293,6 @@ export default function DiscoverPage() {
   }
 
   const photoUrl = current?.avatar_signed_url || FALLBACK_AVATAR;
-
   const online = current ? isOnline(current.id) : false;
   const label = online ? "Online now" : formatActiveLabel(current?.last_seen_at ?? null);
 
@@ -193,6 +307,9 @@ export default function DiscoverPage() {
       <AppHeader
         right={
           <>
+            <button className="btn btn-gray" type="button" onClick={() => setFiltersOpen((v) => !v)}>
+              ⚙️ Filters
+            </button>
             <button className="btn btn-gray" type="button" onClick={() => (window.location.href = "/matches")}>
               💬 Matches
             </button>
@@ -208,6 +325,76 @@ export default function DiscoverPage() {
           </>
         }
       />
+
+      {filtersOpen && (
+        <div
+          style={{
+            marginBottom: 12,
+            padding: 14,
+            borderRadius: 18,
+            border: "1px solid var(--border)",
+            background: "var(--card-solid)",
+            boxShadow: "0 16px 40px rgba(0,0,0,0.08)",
+          }}
+        >
+          <div style={{ fontWeight: 950, marginBottom: 10 }}>Filters</div>
+
+          <div style={{ display: "grid", gap: 10 }}>
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontSize: 13, fontWeight: 900, opacity: 0.85 }}>Gender</div>
+              <select
+                value={genderFilter}
+                onChange={(e) => setGenderFilter(e.target.value as any)}
+                style={{ padding: 12, borderRadius: 14, border: "1px solid rgba(0,0,0,0.12)" }}
+              >
+                <option value="any">Any</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontSize: 13, fontWeight: 900, opacity: 0.85 }}>Min age: {minAge}</div>
+              <input type="range" min={18} max={60} value={minAge} onChange={(e) => setMinAge(parseInt(e.target.value, 10))} />
+            </div>
+
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontSize: 13, fontWeight: 900, opacity: 0.85 }}>Max age: {maxAge}</div>
+              <input type="range" min={18} max={80} value={maxAge} onChange={(e) => setMaxAge(parseInt(e.target.value, 10))} />
+            </div>
+
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontSize: 13, fontWeight: 900, opacity: 0.85 }}>Active within</div>
+              <select
+                value={activeWithinMins}
+                onChange={(e) => setActiveWithinMins(parseInt(e.target.value, 10))}
+                style={{ padding: 12, borderRadius: 14, border: "1px solid rgba(0,0,0,0.12)" }}
+              >
+                <option value={10}>10 min</option>
+                <option value={60}>1 hour</option>
+                <option value={240}>4 hours</option>
+                <option value={1440}>24 hours</option>
+                <option value={10080}>7 days</option>
+              </select>
+            </div>
+
+            <label style={{ display: "flex", gap: 10, alignItems: "center", fontWeight: 900, fontSize: 13, opacity: 0.9 }}>
+              <input type="checkbox" checked={requirePhoto} onChange={(e) => setRequirePhoto(e.target.checked)} />
+              Require photo (can hide everyone)
+            </label>
+
+            <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+              <button className="btn btn-gray" type="button" onClick={clearFilters} style={{ flex: 1 }}>
+                Clear
+              </button>
+              <button className="btn btn-warm" type="button" onClick={applyFilters} style={{ flex: 1 }}>
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {status && (
         <div style={{ padding: 12, borderRadius: 14, background: "rgba(255, 244, 235, 0.85)", marginBottom: 12 }}>
@@ -251,7 +438,7 @@ export default function DiscoverPage() {
           >
             <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.35) 100%)" }} />
 
-            {/* ✅ Online / Last seen badge */}
+            {/* Online / Last seen badge */}
             <div
               style={{
                 position: "absolute",
