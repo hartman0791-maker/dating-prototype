@@ -12,12 +12,6 @@ type PresenceContextValue = {
 
 const PresenceContext = createContext<PresenceContextValue | null>(null);
 
-/**
- * Global Presence Provider:
- * - Tracks "who is online anywhere in the app" using ONE channel: presence:global
- * - Updates profiles.last_seen_at every 30s (backup for "Last seen")
- * - Exposes onlineIds + isOnline() via context
- */
 export default function PresenceProvider({ children }: { children: React.ReactNode }) {
   const [userId, setUserId] = useState<string | null>(null);
   const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
@@ -34,24 +28,23 @@ export default function PresenceProvider({ children }: { children: React.ReactNo
   }, [userId, onlineIds]);
 
   async function touchLastSeen(uid: string) {
-    // Best-effort (don’t block UI). This is used for "Last seen X ago"
-    const { error } = await supabase
-      .from("profiles")
-      .update({ last_seen_at: new Date().toISOString() })
-      .eq("id", uid);
-
+    const { error } = await supabase.from("profiles").update({ last_seen_at: new Date().toISOString() }).eq("id", uid);
     if (error) console.log("[presence] last_seen update error:", error.message);
   }
 
   useEffect(() => {
     let cancelled = false;
 
+    console.log("[presence] Provider mounted ✅");
+
     (async () => {
       const { data } = await supabase.auth.getSession();
       const uid = data.session?.user.id ?? null;
+
+      console.log("[presence] session uid:", uid);
+
       if (cancelled) return;
 
-      // If not logged in, nothing to track
       if (!uid) {
         setUserId(null);
         setOnlineIds(new Set());
@@ -60,31 +53,30 @@ export default function PresenceProvider({ children }: { children: React.ReactNo
 
       setUserId(uid);
 
-      // Backup “last seen”: update immediately + every 30s
       void touchLastSeen(uid);
       intervalRef.current = window.setInterval(() => void touchLastSeen(uid), 30_000);
 
-      // Update on tab close (best effort)
       const onUnload = () => void touchLastSeen(uid);
       window.addEventListener("beforeunload", onUnload);
 
-      // ✅ Global presence channel
       const channel = supabase.channel("presence:global", {
         config: { presence: { key: uid } },
       });
       channelRef.current = channel;
 
       channel.on("presence", { event: "sync" }, () => {
-        // presenceState is: { [key]: [payload, payload, ...] }
         const state = channel.presenceState() as Record<string, any[]>;
+        console.log("[presence] sync state:", state);
         setOnlineIds(new Set(Object.keys(state)));
       });
 
       channel.on("presence", { event: "join" }, ({ key }) => {
+        console.log("[presence] join:", key);
         setOnlineIds((prev) => new Set([...prev, key]));
       });
 
       channel.on("presence", { event: "leave" }, ({ key }) => {
+        console.log("[presence] leave:", key);
         setOnlineIds((prev) => {
           const next = new Set(prev);
           next.delete(key);
@@ -93,9 +85,11 @@ export default function PresenceProvider({ children }: { children: React.ReactNo
       });
 
       channel.subscribe(async (status) => {
-        // Track once subscribed
+        console.log("[presence] subscribe status:", status);
+
         if (status === "SUBSCRIBED") {
-          await channel.track({ user_id: uid, at: new Date().toISOString() });
+          const res = await channel.track({ user_id: uid, at: new Date().toISOString() });
+          console.log("[presence] track result:", res);
         }
       });
 
@@ -113,7 +107,6 @@ export default function PresenceProvider({ children }: { children: React.ReactNo
       }
 
       if (channelRef.current) {
-        // IMPORTANT: cleanup must return void (not Promise)
         void supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
@@ -123,11 +116,9 @@ export default function PresenceProvider({ children }: { children: React.ReactNo
   return <PresenceContext.Provider value={value}>{children}</PresenceContext.Provider>;
 }
 
-/** Hook to read global presence anywhere */
 export function usePresence() {
   const ctx = useContext(PresenceContext);
-  if (!ctx) {
-    throw new Error("usePresence must be used inside <PresenceProvider>");
-  }
+  if (!ctx) throw new Error("usePresence must be used inside <PresenceProvider>");
   return ctx;
 }
+
