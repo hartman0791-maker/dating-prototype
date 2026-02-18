@@ -60,6 +60,7 @@ function calcAge(birthdate?: string | null) {
   if (!birthdate) return null;
   const d = new Date(birthdate);
   if (Number.isNaN(d.getTime())) return null;
+
   const now = new Date();
   let age = now.getFullYear() - d.getFullYear();
   const m = now.getMonth() - d.getMonth();
@@ -71,46 +72,24 @@ export default function DiscoverPage() {
   const { isOnline } = usePresence();
 
   const [userId, setUserId] = useState<string | null>(null);
+  const [allProfiles, setAllProfiles] = useState<ViewProfile[]>([]);
   const [profiles, setProfiles] = useState<ViewProfile[]>([]);
   const [current, setCurrent] = useState<ViewProfile | null>(null);
 
   const [status, setStatus] = useState("");
+  const [anim, setAnim] = useState<"in" | "out">("in");
   const [loading, setLoading] = useState(false);
   const [swiping, setSwiping] = useState(false);
 
-  // Card animation state (for swipe-away)
-  const [anim, setAnim] = useState<"in" | "out">("in");
-
-  // ===== Filters UI =====
+  // Filters UI
   const [filtersOpen, setFiltersOpen] = useState(false);
-
-  // UI values
   const [genderFilter, setGenderFilter] = useState<"any" | "male" | "female" | "other">("any");
   const [minAge, setMinAge] = useState(18);
   const [maxAge, setMaxAge] = useState(60);
-  const [activeWithinMins, setActiveWithinMins] = useState(10080); // 7 days
+  const [activeWithinMins, setActiveWithinMins] = useState(10080);
   const [requirePhoto, setRequirePhoto] = useState(false);
 
-  // Applied filters (used in loadProfiles)
-  const [applied, setApplied] = useState({
-    genderFilter: "any" as "any" | "male" | "female" | "other",
-    minAge: 18,
-    maxAge: 60,
-    activeWithinMins: 10080,
-    requirePhoto: false,
-  });
-
-  // Signed url cache
   const signedUrlCache = useRef<Record<string, string>>({});
-
-  // ===== Swipe gestures =====
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  const startRef = useRef<{ x: number; y: number; t: number } | null>(null);
-  const [drag, setDrag] = useState({ x: 0, y: 0, rot: 0 });
-  const [dragging, setDragging] = useState(false);
-
-  const SWIPE_X_THRESHOLD = 120; // px
-  const SWIPE_VELOCITY_THRESHOLD = 0.5; // px/ms
 
   useEffect(() => {
     (async () => {
@@ -127,8 +106,10 @@ export default function DiscoverPage() {
 
   async function getSignedAvatarUrl(path: string) {
     if (signedUrlCache.current[path]) return signedUrlCache.current[path];
+
     const { data, error } = await supabase.storage.from("avatars").createSignedUrl(path, 3600);
     if (error) return null;
+
     signedUrlCache.current[path] = data.signedUrl;
     return data.signedUrl;
   }
@@ -143,20 +124,42 @@ export default function DiscoverPage() {
     return out;
   }
 
-  function applyFilters() {
+  function applyFiltersToList(list: ViewProfile[]) {
+    const genderArg = genderFilter === "any" ? null : genderFilter;
     const mn = Math.min(minAge, maxAge);
     const mx = Math.max(minAge, maxAge);
 
-    setApplied({
-      genderFilter,
-      minAge: mn,
-      maxAge: mx,
-      activeWithinMins,
-      requirePhoto,
+    let filtered = [...list];
+
+    if (requirePhoto) filtered = filtered.filter((p) => !!p.avatar_path);
+
+    if (genderArg) {
+      filtered = filtered.filter((p) => (p.gender || "").toLowerCase() === genderArg.toLowerCase());
+    }
+
+    filtered = filtered.filter((p) => {
+      const age = calcAge(p.birthdate ?? null);
+      if (age === null) return true;
+      return age >= mn && age <= mx;
     });
 
+    if (activeWithinMins && activeWithinMins > 0) {
+      const cutoff = Date.now() - activeWithinMins * 60_000;
+      filtered = filtered.filter((p) => {
+        if (!p.last_seen_at) return true;
+        return new Date(p.last_seen_at).getTime() >= cutoff;
+      });
+    }
+
+    return filtered;
+  }
+
+  function applyFilters() {
+    const filtered = applyFiltersToList(allProfiles);
+    setProfiles(filtered);
+    setCurrent(filtered[0] ?? null);
+    setStatus(filtered.length ? "" : "No more profiles.");
     setFiltersOpen(false);
-    void loadProfiles();
   }
 
   function clearFilters() {
@@ -165,6 +168,11 @@ export default function DiscoverPage() {
     setMaxAge(60);
     setActiveWithinMins(10080);
     setRequirePhoto(false);
+
+    // Reset to full list immediately
+    setProfiles(allProfiles);
+    setCurrent(allProfiles[0] ?? null);
+    setStatus(allProfiles.length ? "" : "No more profiles.");
   }
 
   async function loadProfiles() {
@@ -172,73 +180,27 @@ export default function DiscoverPage() {
     setStatus("");
 
     try {
-      const genderArg = applied.genderFilter === "any" ? null : applied.genderFilter;
-
-      let data: any = null;
-      let error: any = null;
-
-      // Try filtered RPC first (if present)
-      const res1 = await supabase.rpc("get_discovery_profiles_filtered", {
-        limit_count: 10,
-        min_age: applied.minAge,
-        max_age: applied.maxAge,
-        gender_filter: genderArg,
-        require_photo: applied.requirePhoto,
-        active_within_mins: applied.activeWithinMins,
-      });
-
-      data = res1.data;
-      error = res1.error;
-
-      // Fallback if function doesn't exist / schema cache
-      if (error && String(error.message || "").includes("schema cache")) {
-        const res2 = await supabase.rpc("get_discovery_profiles", { limit_count: 10 });
-        data = res2.data;
-        error = res2.error;
-
-        // Client-side filter fallback (best-effort)
-        if (!error) {
-          let raw = (data ?? []) as DiscoveryRow[];
-
-          if (applied.requirePhoto) raw = raw.filter((p) => !!p.avatar_path);
-
-          if (genderArg) {
-            raw = raw.filter((p) => (p.gender || "").toLowerCase() === String(genderArg).toLowerCase());
-          }
-
-          raw = raw.filter((p) => {
-            const age = calcAge(p.birthdate ?? null);
-            if (age === null) return true;
-            return age >= applied.minAge && age <= applied.maxAge;
-          });
-
-          if (applied.activeWithinMins && applied.activeWithinMins > 0) {
-            const cutoff = Date.now() - applied.activeWithinMins * 60_000;
-            raw = raw.filter((p) => {
-              if (!p.last_seen_at) return true;
-              return new Date(p.last_seen_at).getTime() >= cutoff;
-            });
-          }
-
-          data = raw;
-        }
-      }
+      // ✅ ONLY call the stable RPC
+      const { data, error } = await supabase.rpc("get_discovery_profiles", { limit_count: 10 });
 
       if (error) {
+        setStatus(`Error: ${error.message}`);
+        setAllProfiles([]);
         setProfiles([]);
         setCurrent(null);
-        setStatus(`Error: ${error.message}`);
         return;
       }
 
       const raw = (data ?? []) as DiscoveryRow[];
       const list = await attachSignedUrls(raw);
 
-      setProfiles(list);
-      setCurrent(list[0] ?? null);
-      setStatus(list.length ? "" : "No more profiles. Tip: turn OFF filters or create a second test account.");
-      setAnim("in");
-      setDrag({ x: 0, y: 0, rot: 0 });
+      setAllProfiles(list);
+
+      // Apply current UI filter state to the loaded list
+      const filtered = applyFiltersToList(list);
+      setProfiles(filtered);
+      setCurrent(filtered[0] ?? null);
+      setStatus(filtered.length ? "" : "No more profiles.");
     } finally {
       setLoading(false);
     }
@@ -250,16 +212,14 @@ export default function DiscoverPage() {
     setSwiping(true);
     setAnim("out");
 
-    window.setTimeout(async () => {
+    setTimeout(async () => {
       try {
         const targetId = current.id;
 
+        // move UI forward immediately
         const remaining = profiles.slice(1);
         setProfiles(remaining);
         setCurrent(remaining[0] ?? null);
-
-        // reset card drag immediately for next card
-        setDrag({ x: 0, y: 0, rot: 0 });
         setAnim("in");
 
         const { data, error } = await supabase.rpc("swipe_and_maybe_match", {
@@ -281,54 +241,6 @@ export default function DiscoverPage() {
         setSwiping(false);
       }
     }, 180);
-  }
-
-  // ===== Gesture handlers =====
-  function onPointerDown(e: React.PointerEvent) {
-    if (!current || swiping) return;
-    setDragging(true);
-    startRef.current = { x: e.clientX, y: e.clientY, t: performance.now() };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }
-
-  function onPointerMove(e: React.PointerEvent) {
-    if (!dragging || !startRef.current) return;
-
-    const dx = e.clientX - startRef.current.x;
-    const dy = e.clientY - startRef.current.y;
-
-    // rotation based on dx
-    const rot = Math.max(-12, Math.min(12, dx * 0.06));
-
-    setDrag({ x: dx, y: dy * 0.25, rot });
-  }
-
-  function onPointerUp(e: React.PointerEvent) {
-    if (!dragging || !startRef.current) return;
-
-    const dx = drag.x;
-    const dt = Math.max(1, performance.now() - startRef.current.t);
-    const vx = dx / dt; // px/ms
-
-    setDragging(false);
-    startRef.current = null;
-
-    const shouldSwipe =
-      Math.abs(dx) > SWIPE_X_THRESHOLD || Math.abs(vx) > SWIPE_VELOCITY_THRESHOLD;
-
-    if (shouldSwipe) {
-      const dir: "like" | "pass" = dx > 0 ? "like" : "pass";
-
-      // fling animation
-      const flyX = dx > 0 ? 900 : -900;
-      setDrag((p) => ({ ...p, x: flyX, rot: dx > 0 ? 18 : -18 }));
-      window.setTimeout(() => {
-        void swipe(dir);
-      }, 120);
-    } else {
-      // snap back
-      setDrag({ x: 0, y: 0, rot: 0 });
-    }
   }
 
   async function resetMySwipes() {
@@ -353,21 +265,12 @@ export default function DiscoverPage() {
   const online = current ? isOnline(current.id) : false;
   const label = online ? "Online now" : formatActiveLabel(current?.last_seen_at ?? null);
 
-  // overlays for swipe direction
-  const likeOpacity = Math.max(0, Math.min(1, drag.x / 120));
-  const nopeOpacity = Math.max(0, Math.min(1, -drag.x / 120));
-
   return (
     <main className="app-container">
       <style>{`
-        .cardBase {
-          transition: transform 180ms ease, opacity 180ms ease;
-          will-change: transform, opacity;
-        }
+        .card { transition: transform 180ms ease, opacity 180ms ease; will-change: transform, opacity; }
         .card.in { opacity: 1; transform: translateY(0) scale(1); }
         .card.out { opacity: 0; transform: translateY(10px) scale(0.98); }
-
-        .pillBtn { border-radius: 999px; padding: 12px 14px; font-weight: 950; }
       `}</style>
 
       <AppHeader
@@ -468,7 +371,6 @@ export default function DiscoverPage() {
         </div>
       )}
 
-      {/* Skeleton */}
       {loading && !current ? (
         <div style={{ padding: 20, borderRadius: 22, background: "var(--card-solid)", border: "1px solid var(--border)" }}>
           <div style={{ height: 260, borderRadius: 18, background: "rgba(0,0,0,0.08)", marginBottom: 16 }} />
@@ -482,69 +384,15 @@ export default function DiscoverPage() {
         </button>
       ) : (
         <div
-          ref={cardRef}
-          className={`cardBase card ${anim}`}
+          className={`card ${anim}`}
           style={{
             padding: 20,
             borderRadius: 22,
             background: "linear-gradient(180deg, var(--card-solid), rgba(238,242,247,0.8))",
             border: "1px solid var(--border)",
             boxShadow: "0 14px 28px rgba(0,0,0,0.10)",
-            touchAction: "pan-y",
-            transform: `translate(${drag.x}px, ${drag.y}px) rotate(${drag.rot}deg)`,
-            transition: dragging ? "none" : "transform 180ms ease, opacity 180ms ease",
-            position: "relative",
           }}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
         >
-          {/* LIKE / NOPE overlay */}
-          <div
-            style={{
-              position: "absolute",
-              top: 18,
-              left: 18,
-              padding: "8px 12px",
-              borderRadius: 12,
-              border: "3px solid rgba(34,197,94,0.95)",
-              color: "rgba(34,197,94,0.95)",
-              fontWeight: 950,
-              letterSpacing: 1,
-              transform: "rotate(-12deg)",
-              opacity: likeOpacity,
-              background: "rgba(255,255,255,0.75)",
-              backdropFilter: "blur(6px)",
-              zIndex: 5,
-              pointerEvents: "none",
-            }}
-          >
-            LIKE
-          </div>
-
-          <div
-            style={{
-              position: "absolute",
-              top: 18,
-              right: 18,
-              padding: "8px 12px",
-              borderRadius: 12,
-              border: "3px solid rgba(239,68,68,0.95)",
-              color: "rgba(239,68,68,0.95)",
-              fontWeight: 950,
-              letterSpacing: 1,
-              transform: "rotate(12deg)",
-              opacity: nopeOpacity,
-              background: "rgba(255,255,255,0.75)",
-              backdropFilter: "blur(6px)",
-              zIndex: 5,
-              pointerEvents: "none",
-            }}
-          >
-            NOPE
-          </div>
-
           <div
             style={{
               height: 260,
@@ -559,7 +407,6 @@ export default function DiscoverPage() {
           >
             <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.35) 100%)" }} />
 
-            {/* Online / last seen badge */}
             <div
               style={{
                 position: "absolute",
@@ -597,28 +444,28 @@ export default function DiscoverPage() {
 
           <div style={{ display: "flex", gap: 12 }}>
             <button
-              className="btn btn-gray pillBtn"
-              style={{ flex: 1 }}
+              className="btn btn-gray"
+              style={{ flex: 1, borderRadius: 30, padding: 14 }}
               type="button"
               disabled={swiping}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                void swipe("pass");
+                swipe("pass");
               }}
             >
               ❌ Pass
             </button>
 
             <button
-              className="btn btn-warm pillBtn"
-              style={{ flex: 1 }}
+              className="btn btn-warm"
+              style={{ flex: 1, borderRadius: 30, padding: 14 }}
               type="button"
               disabled={swiping}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                void swipe("like");
+                swipe("like");
               }}
             >
               ❤️ Like
@@ -626,10 +473,6 @@ export default function DiscoverPage() {
           </div>
 
           {swiping && <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65, fontWeight: 800 }}>Saving…</div>}
-
-          <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65, fontWeight: 800 }}>
-            Tip: drag left/right to swipe ✨
-          </div>
         </div>
       )}
     </main>
