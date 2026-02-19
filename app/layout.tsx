@@ -2,7 +2,7 @@
 import "./globals.css";
 import ThemeToggle from "../components/ThemeToggle";
 import PresenceProvider from "../components/PresenceProvider";
-import { Toaster } from "sonner";
+
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
