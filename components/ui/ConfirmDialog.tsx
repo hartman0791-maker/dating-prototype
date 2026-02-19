@@ -1,6 +1,6 @@
 "use client";
 
-import * as Dialog from "@radix-ui/react-dialog";
+import { useEffect } from "react";
 
 type Props = {
   open: boolean;
@@ -23,66 +23,84 @@ export default function ConfirmDialog({
   onOpenChange,
   onConfirm,
 }: Props) {
+  // Close on Escape
+  useEffect(() => {
+    if (!open) return;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onOpenChange(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onOpenChange]);
+
+  if (!open) return null;
+
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            backdropFilter: "blur(6px)",
-            zIndex: 9998,
-          }}
-        />
-        <Dialog.Content
-          style={{
-            position: "fixed",
-            left: "50%",
-            top: "50%",
-            transform: "translate(-50%, -50%)",
-            width: "min(92vw, 420px)",
-            borderRadius: 18,
-            background: "white",
-            padding: 16,
-            border: "1px solid rgba(0,0,0,0.10)",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.22)",
-            zIndex: 9999,
-          }}
-        >
-          <Dialog.Title style={{ fontWeight: 950, fontSize: 16, marginBottom: 6 }}>
-            {title}
-          </Dialog.Title>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9999,
+        display: "grid",
+        placeItems: "center",
+        padding: 16,
+      }}
+      onMouseDown={() => onOpenChange(false)}
+    >
+      {/* Overlay */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: "rgba(0,0,0,0.45)",
+          backdropFilter: "blur(6px)",
+        }}
+      />
 
-          <Dialog.Description style={{ opacity: 0.75, fontWeight: 700, fontSize: 13 }}>
-            {description}
-          </Dialog.Description>
+      {/* Modal */}
+      <div
+        style={{
+          position: "relative",
+          width: "min(92vw, 420px)",
+          borderRadius: 18,
+          background: "white",
+          padding: 16,
+          border: "1px solid rgba(0,0,0,0.10)",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.22)",
+        }}
+        onMouseDown={(e) => e.stopPropagation()} // prevent closing when clicking inside
+      >
+        <div style={{ fontWeight: 950, fontSize: 16, marginBottom: 6 }}>{title}</div>
+        <div style={{ opacity: 0.75, fontWeight: 700, fontSize: 13 }}>{description}</div>
 
-          <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-            <Dialog.Close asChild>
-              <button
-                type="button"
-                className="btn btn-gray"
-                style={{ flex: 1 }}
-              >
-                {cancelText}
-              </button>
-            </Dialog.Close>
+        <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+          <button
+            type="button"
+            className="btn btn-gray"
+            style={{ flex: 1 }}
+            onClick={() => onOpenChange(false)}
+          >
+            {cancelText}
+          </button>
 
-            <button
-              type="button"
-              className={danger ? "btn btn-warm" : "btn btn-warm"}
-              style={{
-                flex: 1,
-                filter: danger ? "saturate(1.1)" : "none",
-              }}
-              onClick={onConfirm}
-            >
-              {confirmText}
-            </button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+          <button
+            type="button"
+            className={danger ? "btn btn-warm" : "btn btn-warm"}
+            style={{
+              flex: 1,
+              filter: danger ? "saturate(1.1)" : "none",
+            }}
+            onClick={onConfirm}
+          >
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
+
