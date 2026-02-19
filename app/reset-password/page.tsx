@@ -2,24 +2,24 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { toast } from "sonner";
 
 export default function ResetPasswordPage() {
   const [ready, setReady] = useState(false);
   const [password, setPassword] = useState("");
+  const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
 
   const canSubmit = useMemo(() => password.trim().length >= 6, [password]);
 
-  // Ensure we have a session (recovery session) before letting user set password
+  // Ensure we have a recovery session before letting the user set a new password
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
       setReady(Boolean(data.session));
     })();
 
-    // Also listen for password recovery event (sometimes arrives async)
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      // Depending on Supabase version, you may see PASSWORD_RECOVERY or SIGNED_IN
       if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
         setReady(true);
       }
@@ -30,7 +30,9 @@ export default function ResetPasswordPage() {
 
   async function updatePassword() {
     if (!canSubmit || loading) return;
+
     setLoading(true);
+    setStatus("Updating password...");
 
     try {
       const { error } = await supabase.auth.updateUser({
@@ -38,12 +40,13 @@ export default function ResetPasswordPage() {
       });
 
       if (error) {
-        toast.error(error.message);
+        setStatus(`Error: ${error.message}`);
         return;
       }
 
-      toast.success("Password updated ✅ Please log in.");
-      // Optional: sign them out so they log in fresh
+      setStatus("Password updated ✅ Redirecting to login...");
+
+      // Optional: sign out so they log in fresh
       await supabase.auth.signOut();
       window.location.href = "/login";
     } finally {
@@ -59,8 +62,23 @@ export default function ResetPasswordPage() {
           Open the reset link from your email. If you already did, wait a moment and try again.
         </p>
 
-        <button className="btn btn-gray btn-full" onClick={() => window.location.reload()}>
+        {status && (
+          <div style={{ padding: 12, borderRadius: 14, background: "rgba(255, 244, 235, 0.85)", marginTop: 12 }}>
+            {status}
+          </div>
+        )}
+
+        <button className="btn btn-gray btn-full" type="button" onClick={() => window.location.reload()}>
           Reload
+        </button>
+
+        <button
+          className="btn btn-gray btn-full"
+          type="button"
+          style={{ marginTop: 10 }}
+          onClick={() => (window.location.href = "/login")}
+        >
+          Back to login
         </button>
       </main>
     );
@@ -69,6 +87,12 @@ export default function ResetPasswordPage() {
   return (
     <main className="app-container" style={{ maxWidth: 520 }}>
       <h1>Choose a new password</h1>
+
+      {status && (
+        <div style={{ padding: 12, borderRadius: 14, background: "rgba(255, 244, 235, 0.85)", marginTop: 12 }}>
+          {status}
+        </div>
+      )}
 
       <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
         <label style={{ fontSize: 13, fontWeight: 900, opacity: 0.85 }}>New password</label>
