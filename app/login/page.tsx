@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function LoginPage() {
@@ -25,10 +26,11 @@ export default function LoginPage() {
 
   useEffect(() => {
     // Load theme from localStorage
-    const saved = (typeof window !== "undefined" && localStorage.getItem("theme")) as
-      | "dark"
-      | "light"
-      | null;
+    const saved =
+      (typeof window !== "undefined" && localStorage.getItem("theme")) as
+        | "dark"
+        | "light"
+        | null;
     if (saved === "dark" || saved === "light") setTheme(saved);
   }, []);
 
@@ -570,6 +572,23 @@ export default function LoginPage() {
               position:relative;
               z-index: 1;
             }
+
+            /* Forgot password link */
+            .forgotRow{
+              margin-top: 8px;
+              text-align: right;
+              position: relative;
+              z-index: 1;
+            }
+            .forgotLink{
+              font-size: 13px;
+              font-weight: 900;
+              opacity: 0.8;
+              text-decoration: none;
+              color: var(--text);
+              transition: opacity 140ms ease;
+            }
+            .forgotLink:hover{ opacity: 1; }
           `,
         }}
       />
@@ -582,17 +601,32 @@ export default function LoginPage() {
         <div className="heart" style={{ left: "10%", animationDuration: "11s", animationDelay: "0s" }} />
         <div
           className="heart"
-          style={{ left: "22%", animationDuration: "14s", animationDelay: "-2s", transform: "rotate(45deg) scale(1.15)" }}
+          style={{
+            left: "22%",
+            animationDuration: "14s",
+            animationDelay: "-2s",
+            transform: "rotate(45deg) scale(1.15)",
+          }}
         />
         <div className="heart" style={{ left: "36%", animationDuration: "12s", animationDelay: "-6s" }} />
         <div
           className="heart"
-          style={{ left: "52%", animationDuration: "16s", animationDelay: "-4s", transform: "rotate(45deg) scale(1.28)" }}
+          style={{
+            left: "52%",
+            animationDuration: "16s",
+            animationDelay: "-4s",
+            transform: "rotate(45deg) scale(1.28)",
+          }}
         />
         <div className="heart" style={{ left: "68%", animationDuration: "13s", animationDelay: "-7s" }} />
         <div
           className="heart"
-          style={{ left: "82%", animationDuration: "15s", animationDelay: "-1s", transform: "rotate(45deg) scale(0.95)" }}
+          style={{
+            left: "82%",
+            animationDuration: "15s",
+            animationDelay: "-1s",
+            transform: "rotate(45deg) scale(0.95)",
+          }}
         />
       </div>
 
@@ -654,6 +688,13 @@ export default function LoginPage() {
               if (e.key === "Enter" && canSubmit) logIn();
             }}
           />
+
+          {/* ✅ Forgot password link */}
+          <div className="forgotRow">
+            <Link className="forgotLink" href="/forgot-password">
+              Forgot password?
+            </Link>
+          </div>
 
           <div className="btnRow">
             <button
