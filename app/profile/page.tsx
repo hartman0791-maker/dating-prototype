@@ -10,6 +10,12 @@ type Profile = {
   bio: string | null;
   location_text: string | null;
   avatar_path: string | null;
+
+  // ✅ new fields
+  birthdate: string | null; // date in Supabase
+  gender: string | null; // text
+  looking_for: string | null; // text
+  interests: string | null; // text (comma separated is fine)
 };
 
 const FALLBACK_AVATAR =
@@ -35,6 +41,13 @@ export default function ProfilePage() {
   const [name, setName] = useState("");
   const [bio, setBio] = useState("");
   const [locationText, setLocationText] = useState("");
+
+  // ✅ new fields state
+  const [birthdate, setBirthdate] = useState(""); // yyyy-mm-dd
+  const [gender, setGender] = useState<"male" | "female" | "other" | "">("");
+  const [lookingFor, setLookingFor] = useState("");
+  const [interests, setInterests] = useState("");
+
   const [status, setStatus] = useState("");
   const [uploading, setUploading] = useState(false);
 
@@ -60,7 +73,7 @@ export default function ProfilePage() {
 
     const { data, error } = await supabase
       .from("profiles")
-      .select("id,name,bio,location_text,avatar_path")
+      .select("id,name,bio,location_text,avatar_path,birthdate,gender,looking_for,interests")
       .eq("id", uid)
       .single();
 
@@ -71,9 +84,17 @@ export default function ProfilePage() {
 
     const p = data as Profile;
     setProfile(p);
+
     setName(p.name ?? "");
     setBio(p.bio ?? "");
     setLocationText(p.location_text ?? "");
+
+    // ✅ new fields populate
+    setBirthdate(p.birthdate ?? "");
+    setGender(((p.gender ?? "") as any) || "");
+    setLookingFor(p.looking_for ?? "");
+    setInterests(p.interests ?? "");
+
     setStatus("");
 
     if (p.avatar_path) {
@@ -105,6 +126,12 @@ export default function ProfilePage() {
         name: name.trim() || null,
         bio: bio.trim() || null,
         location_text: locationText.trim() || null,
+
+        // ✅ new fields saved
+        birthdate: birthdate || null,
+        gender: gender || null,
+        looking_for: lookingFor.trim() || null,
+        interests: interests.trim() || null,
       })
       .eq("id", userId);
 
@@ -237,6 +264,43 @@ export default function ProfilePage() {
 
           <label style={{ fontSize: 13, fontWeight: 800 }}>Location</label>
           <input value={locationText} onChange={(e) => setLocationText(e.target.value)} style={{ padding: 12, borderRadius: 14, border: "1px solid rgba(0,0,0,0.12)" }} />
+
+          {/* ✅ New fields */}
+          <label style={{ fontSize: 13, fontWeight: 800 }}>Birthdate</label>
+          <input
+            type="date"
+            value={birthdate}
+            onChange={(e) => setBirthdate(e.target.value)}
+            style={{ padding: 12, borderRadius: 14, border: "1px solid rgba(0,0,0,0.12)" }}
+          />
+
+          <label style={{ fontSize: 13, fontWeight: 800 }}>Gender</label>
+          <select
+            value={gender}
+            onChange={(e) => setGender(e.target.value as any)}
+            style={{ padding: 12, borderRadius: 14, border: "1px solid rgba(0,0,0,0.12)" }}
+          >
+            <option value="">Prefer not to say</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="other">Other</option>
+          </select>
+
+          <label style={{ fontSize: 13, fontWeight: 800 }}>Looking for</label>
+          <input
+            value={lookingFor}
+            onChange={(e) => setLookingFor(e.target.value)}
+            placeholder="e.g. Long-term, Friends, Casual"
+            style={{ padding: 12, borderRadius: 14, border: "1px solid rgba(0,0,0,0.12)" }}
+          />
+
+          <label style={{ fontSize: 13, fontWeight: 800 }}>Interests</label>
+          <input
+            value={interests}
+            onChange={(e) => setInterests(e.target.value)}
+            placeholder="e.g. gym, travel, music"
+            style={{ padding: 12, borderRadius: 14, border: "1px solid rgba(0,0,0,0.12)" }}
+          />
 
           <button className="btn btn-warm btn-full" disabled={!canSave} onClick={saveProfile}>
             Save changes
