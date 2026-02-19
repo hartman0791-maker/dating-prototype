@@ -2,10 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { toast } from "sonner";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
+  const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
 
   const canSubmit = useMemo(() => email.trim().length > 3, [email]);
@@ -13,6 +13,7 @@ export default function ForgotPasswordPage() {
   async function sendReset() {
     if (!canSubmit || loading) return;
     setLoading(true);
+    setStatus("Sending reset email...");
 
     try {
       const redirectTo = `${window.location.origin}/reset-password`;
@@ -22,11 +23,11 @@ export default function ForgotPasswordPage() {
       });
 
       if (error) {
-        toast.error(error.message);
+        setStatus(`Error: ${error.message}`);
         return;
       }
 
-      toast.success("Password reset email sent ✅ Check your inbox.");
+      setStatus("Reset email sent ✅ Check your inbox.");
       setEmail("");
     } finally {
       setLoading(false);
@@ -40,6 +41,12 @@ export default function ForgotPasswordPage() {
         Enter your email and we’ll send you a reset link.
       </p>
 
+      {status && (
+        <div style={{ padding: 12, borderRadius: 14, background: "rgba(255, 244, 235, 0.85)", marginTop: 12 }}>
+          {status}
+        </div>
+      )}
+
       <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
         <label style={{ fontSize: 13, fontWeight: 900, opacity: 0.85 }}>Email</label>
         <input
@@ -49,12 +56,7 @@ export default function ForgotPasswordPage() {
           autoComplete="email"
         />
 
-        <button
-          className="btn btn-warm btn-full"
-          type="button"
-          disabled={!canSubmit || loading}
-          onClick={sendReset}
-        >
+        <button className="btn btn-warm btn-full" type="button" disabled={!canSubmit || loading} onClick={sendReset}>
           {loading ? "Sending…" : "Send reset link"}
         </button>
 
