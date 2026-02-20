@@ -1,7 +1,7 @@
 "use client";
 export {};
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import AppHeader from "../../components/AppHeader";
 import { usePresence } from "../../components/PresenceProvider";
@@ -66,6 +66,15 @@ function calcAge(birthdate?: string | null) {
   const m = now.getMonth() - d.getMonth();
   if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
   return age;
+}
+
+function minsLabel(v: number) {
+  if (v === 10) return "10 min";
+  if (v === 60) return "1 hour";
+  if (v === 240) return "4 hours";
+  if (v === 1440) return "24 hours";
+  if (v === 10080) return "7 days";
+  return `${v} min`;
 }
 
 export default function DiscoverPage() {
@@ -139,14 +148,14 @@ export default function DiscoverPage() {
 
     filtered = filtered.filter((p) => {
       const age = calcAge(p.birthdate ?? null);
-      if (age === null) return true;
+      if (age === null) return true; // keep unknown-age users
       return age >= mn && age <= mx;
     });
 
     if (activeWithinMins && activeWithinMins > 0) {
       const cutoff = Date.now() - activeWithinMins * 60_000;
       filtered = filtered.filter((p) => {
-        if (!p.last_seen_at) return true;
+        if (!p.last_seen_at) return true; // keep unknown last_seen users
         return new Date(p.last_seen_at).getTime() >= cutoff;
       });
     }
@@ -158,7 +167,11 @@ export default function DiscoverPage() {
     const filtered = applyFiltersToList(allProfiles);
     setProfiles(filtered);
     setCurrent(filtered[0] ?? null);
-    setStatus(filtered.length ? "" : "No more profiles.");
+
+    // ✅ better messaging
+    if (!filtered.length) setStatus("No results match your filters. Try widening them.");
+    else setStatus("");
+
     setFiltersOpen(false);
   }
 
@@ -169,7 +182,6 @@ export default function DiscoverPage() {
     setActiveWithinMins(10080);
     setRequirePhoto(false);
 
-    // Reset to full list immediately
     setProfiles(allProfiles);
     setCurrent(allProfiles[0] ?? null);
     setStatus(allProfiles.length ? "" : "No more profiles.");
@@ -180,7 +192,6 @@ export default function DiscoverPage() {
     setStatus("");
 
     try {
-      // ✅ ONLY call the stable RPC
       const { data, error } = await supabase.rpc("get_discovery_profiles", { limit_count: 10 });
 
       if (error) {
@@ -196,11 +207,11 @@ export default function DiscoverPage() {
 
       setAllProfiles(list);
 
-      // Apply current UI filter state to the loaded list
       const filtered = applyFiltersToList(list);
       setProfiles(filtered);
       setCurrent(filtered[0] ?? null);
-      setStatus(filtered.length ? "" : "No more profiles.");
+
+      if (!filtered.length) setStatus("No results match your filters. Try widening them.");
     } finally {
       setLoading(false);
     }
@@ -216,7 +227,6 @@ export default function DiscoverPage() {
       try {
         const targetId = current.id;
 
-        // move UI forward immediately
         const remaining = profiles.slice(1);
         setProfiles(remaining);
         setCurrent(remaining[0] ?? null);
@@ -265,12 +275,41 @@ export default function DiscoverPage() {
   const online = current ? isOnline(current.id) : false;
   const label = online ? "Online now" : formatActiveLabel(current?.last_seen_at ?? null);
 
+  // ✅ UI metrics
+  const showingText = useMemo(() => {
+    const total = allProfiles.length;
+    const shown = profiles.length;
+    if (!total) return "";
+    return `Showing ${shown} of ${total} profiles`;
+  }, [profiles.length, allProfiles.length]);
+
+  const filterChips = useMemo(() => {
+    const chips: string[] = [];
+    const mn = Math.min(minAge, maxAge);
+    const mx = Math.max(minAge, maxAge);
+
+    if (genderFilter !== "any") chips.push(`Gender: ${genderFilter}`);
+    if (mn !== 18 || mx !== 60) chips.push(`Age: ${mn}-${mx}`);
+    if (activeWithinMins !== 10080) chips.push(`Active: ${minsLabel(activeWithinMins)}`);
+    if (requirePhoto) chips.push("Photo only");
+
+    return chips;
+  }, [genderFilter, minAge, maxAge, activeWithinMins, requirePhoto]);
+
   return (
     <main className="app-container">
       <style>{`
         .card { transition: transform 180ms ease, opacity 180ms ease; will-change: transform, opacity; }
         .card.in { opacity: 1; transform: translateY(0) scale(1); }
         .card.out { opacity: 0; transform: translateY(10px) scale(0.98); }
+        .chip {
+          padding: 6px 10px;
+          border-radius: 999px;
+          font-size: 12px;
+          font-weight: 900;
+          background: rgba(0,0,0,0.06);
+          border: 1px solid rgba(0,0,0,0.08);
+        }
       `}</style>
 
       <AppHeader
@@ -294,6 +333,31 @@ export default function DiscoverPage() {
           </>
         }
       />
+
+      {/* ✅ results summary + chips */}
+      {(showingText || filterChips.length) && (
+        <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+          {showingText && <div style={{ fontSize: 12, fontWeight: 900, opacity: 0.75 }}>{showingText}</div>}
+
+          {filterChips.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+              {filterChips.map((c) => (
+                <div key={c} className="chip">
+                  {c}
+                </div>
+              ))}
+              <button
+                type="button"
+                className="btn btn-gray"
+                style={{ padding: "8px 10px", borderRadius: 999 }}
+                onClick={clearFilters}
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {filtersOpen && (
         <div
